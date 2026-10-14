@@ -14,7 +14,7 @@ const base = {
 /** A complete, contract-shaped event sequence for one object reviewed against two rules. */
 export function objectRunEvents(results: LiveObjectResult[] = [liveResult()]): ReviewStreamEvent[] {
   return [
-    {phase: 'run_started', run_id: 'run-1', rule_version: 2, objects_total: 1, kind: 'object'},
+    {phase: 'run_started', run_id: 'run-1', rule_version: 2, objects_total: 1, kind: 'object', all_rules: true, selected_rule_groups: []},
     {...base, phase: 'object_start'},
     {...base, phase: 'definition_fetch'},
     {...base, phase: 'sql_ready', sql_length: 1200},

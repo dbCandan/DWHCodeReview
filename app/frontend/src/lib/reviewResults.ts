@@ -77,15 +77,30 @@ export function orphanFindings(result: Pick<ObjectResult, 'findings' | 'rule_res
   return result.findings.filter((finding) => !ruleIds.has(finding.rule_id));
 }
 
+/** The group filter value of rules without a named group (rule-group-selection Requirement 6). */
+export const UNGROUPED = '__grupsuz__';
+
 export interface ResultFilter {
   text: string;
   status: RuleStatus | 'ALL';
   severity: Severity | 'ALL';
+  /** A group name, ``UNGROUPED`` or 'ALL'. */
+  group: string;
 }
 
-export const NO_FILTER: ResultFilter = {text: '', status: 'ALL', severity: 'ALL'};
+export const NO_FILTER: ResultFilter = {text: '', status: 'ALL', severity: 'ALL', group: 'ALL'};
+
+/** Group names of the results in first-appearance order; empty when no rule is grouped. */
+export function resultGroupNames(results: ObjectResult[]): string[] {
+  const names = new Set<string>();
+  for (const result of results) for (const rule of result.rule_results) for (const name of rule.rule_group_names ?? []) names.add(name);
+  return [...names];
+}
 
 export function ruleMatches(rule: RuleResult, findings: Finding[], filter: ResultFilter): boolean {
+  const groups = rule.rule_group_names ?? [];
+  if (filter.group === UNGROUPED && groups.length > 0) return false;
+  if (filter.group !== 'ALL' && filter.group !== UNGROUPED && !groups.includes(filter.group)) return false;
   if (filter.status !== 'ALL' && rule.status !== filter.status) return false;
   if (filter.severity !== 'ALL' && (rule.status !== 'FAIL' || rule.severity !== filter.severity)) return false;
   const text = filter.text.trim().toLocaleLowerCase('tr-TR');

@@ -112,8 +112,9 @@ type Executor = (signal: AbortSignal, onEvent: ReviewEventHandler) => Promise<vo
 
 interface ReviewSessionValue {
   session: ReviewSessionState;
-  startObjectReview: (selections: ObjectSelection[]) => void;
-  startScriptReview: (sql: string, label: string) => void;
+  /** `ruleCodes` empty runs every rule (rule-group-selection Requirement 4, Decision 6). */
+  startObjectReview: (selections: ObjectSelection[], ruleCodes?: string[]) => void;
+  startScriptReview: (sql: string, label: string, ruleCodes?: string[]) => void;
   /** "Analizi durdur": closes the stream, which stops the run on the server. */
   stop: () => void;
   showLive: () => void;
@@ -192,21 +193,21 @@ export function ReviewSessionProvider({children}: {children: ReactNode}) {
   );
 
   const startObjectReview = useCallback(
-    (selections: ObjectSelection[]) => {
+    (selections: ObjectSelection[], ruleCodes: string[] = []) => {
       if (selections.length === 0) return;
       const {title, subtitle} = objectRunTitle(selections);
       void run('object', title, subtitle, selections.length, (signal, onEvent) =>
-        ReviewService.streamObjectReview(selections, signal, onEvent),
+        ReviewService.streamObjectReview(selections, signal, onEvent, ruleCodes),
       );
     },
     [run],
   );
 
   const startScriptReview = useCallback(
-    (sql: string, label: string) => {
+    (sql: string, label: string, ruleCodes: string[] = []) => {
       const trimmedLabel = label.trim();
       void run('script', trimmedLabel || SCRIPT_DEFAULT_LABEL, '', 1, (signal, onEvent) =>
-        ReviewService.streamScriptReview(sql, trimmedLabel, signal, onEvent),
+        ReviewService.streamScriptReview(sql, trimmedLabel, signal, onEvent, ruleCodes),
       );
     },
     [run],

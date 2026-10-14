@@ -58,11 +58,26 @@ function filenameFrom(response: Response, fallback: string): string {
 
 /** Object and script reviews with live progress, stored history and server-side exports. */
 export const ReviewService = {
-  streamObjectReview(selections: ObjectSelection[], signal: AbortSignal, onEvent: ReviewEventHandler) {
-    return stream('/object-reviews', {selections}, signal, onEvent);
+  /**
+   * `ruleCodes` empty runs every rule; the screens expand a chosen group into its rules
+   * (rule-group-selection Requirement 4, Decision 6).
+   */
+  streamObjectReview(
+    selections: ObjectSelection[],
+    signal: AbortSignal,
+    onEvent: ReviewEventHandler,
+    ruleCodes: string[] = [],
+  ) {
+    return stream('/object-reviews', {selections, rule_codes: ruleCodes}, signal, onEvent);
   },
-  streamScriptReview(sql: string, label: string, signal: AbortSignal, onEvent: ReviewEventHandler) {
-    return stream('/script-reviews', {sql, label: label || null}, signal, onEvent);
+  streamScriptReview(
+    sql: string,
+    label: string,
+    signal: AbortSignal,
+    onEvent: ReviewEventHandler,
+    ruleCodes: string[] = [],
+  ) {
+    return stream('/script-reviews', {sql, label: label || null, rule_codes: ruleCodes}, signal, onEvent);
   },
   runs(scope: 'mine' | 'all', page: number, pageSize: number, signal?: AbortSignal): Promise<ReviewRunPage> {
     return apiRequest<ReviewRunPage>(`/review-runs?scope=${scope}&page=${page}&page_size=${pageSize}`, {signal});

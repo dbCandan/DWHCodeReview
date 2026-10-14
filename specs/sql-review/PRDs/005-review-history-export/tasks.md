@@ -55,3 +55,19 @@ kanıtıdır.
   `app/backend/tests/integration/test_review_history_api.py`. Ön yüz: ayrıntıda nesne sayfaları
   arasında gezinme ve bağlantıdaki koşumun seçili açılması. Kanıt:
   `app/frontend/src/pages/ReviewHistoryPage.test.tsx`. Bu, L1 (otomatik testlerden geçti) kanıtıdır.
+- [x] Task 8 — Decision 8 / Acceptance 6: zamanlanmış koşum alıcısının erişimi (PRD sürüm 1.3.0).
+  `GET /review-runs/{run_id}` ve iki dışa aktarım ucunda alıcı denetimi (koşumla saklanan alıcı
+  listesi ile kullanıcının e-postasının büyük-küçük harf duyarsız eşleşmesi); işaretleme ve silmede
+  alıcıya `404`. Alıcı listesi [zamanlanmış inceleme](../008-scheduled-review-email/tasks.md) göreviyle
+  yazılır; bu görev ondan sonra yapılır. Kanıt: alıcı listesi zamanlayıcıyla yazıldığı için
+  `app/backend/tests/integration/test_scheduled_review_scheduler.py::test_a_recipient_reads_the_report_but_cannot_change_it`
+  (yerel PostgreSQL ile geçti).
+- [x] Task 9 — Requirement 7, 8, Decision 9 / Acceptance 2: CSV'nin son `rule_group` sütunu ve SQL
+  yorumunda kural yanında grup adı (PRD sürüm 1.4.0); sabit örnek dosyalar yeni biçimle güncellenir.
+  [Kural grubu seçimi Task 5](../007-rule-group-selection/tasks.md) ile birlikte yapılır. Kanıt:
+  `app/backend/tests/unit/test_review_export.py` (yerel `pytest` geçti).
+- [x] Task 10 — Requirement 7, 8, Decision 9 / Acceptance 2: çoklu grup (PRD sürüm 1.5.0). Kuralın birden
+  çok grubu CSV'nin `rule_group` sütununda `; ` ile, SQL yorumunda virgülle birleşir; grupsuz kuralda boş
+  kalır. [Kural grubu seçimi Task 5](../007-rule-group-selection/tasks.md) ile birlikte yapılır. Kanıt:
+  `app/backend/tests/unit/test_review_export.py` ek vakaları. Yerel `pytest` geçti (2026-10-14); `e2e/sql-review/02-script-review-history.mjs` CSV
+  beklentisi `rule_group` sütunuyla güncellendi ve yerel önizlemede geçti.

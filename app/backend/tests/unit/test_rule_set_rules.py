@@ -127,3 +127,42 @@ def test_content_digest_changes_with_order_group_text_and_flag() -> None:
 
 def test_rule_text_stays_out_of_representations() -> None:
     assert "gizli-kural-metni" not in repr(Rule("Kural01", "gizli-kural-metni"))
+
+
+# --- Rule summary (rule-management Requirement 2, 12 and Decision 5) ---------------------------
+
+
+def test_a_summary_is_trimmed_and_a_blank_one_counts_as_not_given() -> None:
+    draft = normalize_draft(
+        [Rule("Kural01", "metin", summary="  Tek cümle.  "), Rule("Kural02", "iki", summary="  ")],
+        [],
+    )
+
+    assert [rule.summary for rule in draft.critical] == ["Tek cümle.", ""]
+
+
+@pytest.mark.parametrize("summary", ["x" * 201, "bir\nsatır", "bir\r\nsatır"])
+def test_a_long_or_multi_line_summary_is_rejected(summary: str) -> None:
+    with pytest.raises(RuleSetValidationError) as raised:
+        normalize_draft([Rule("Kural01", "metin", summary=summary)], [])
+    assert raised.value.code == "rule_summary_invalid"
+    assert raised.value.message
+
+
+def test_a_two_hundred_character_summary_is_accepted() -> None:
+    draft = normalize_draft([Rule("Kural01", "metin", summary=" " + "x" * 200 + " ")], [])
+    assert len(draft.critical[0].summary) == 200
+
+
+def test_a_summary_enters_the_digest_only_when_given() -> None:
+    without = RuleGroups((Rule("Kural01", "a"),), ())
+    blank = RuleGroups((Rule("Kural01", "a", summary=""),), ())
+    given = RuleGroups((Rule("Kural01", "a", summary="Özet."),), ())
+    other = RuleGroups((Rule("Kural01", "a", summary="Başka özet."),), ())
+
+    assert content_sha256(without) == content_sha256(blank)
+    assert len({content_sha256(without), content_sha256(given), content_sha256(other)}) == 3
+
+
+def test_the_summary_stays_out_of_representations() -> None:
+    assert "gizli-ozet" not in repr(Rule("Kural01", "metin", summary="gizli-ozet"))

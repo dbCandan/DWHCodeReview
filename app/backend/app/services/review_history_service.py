@@ -1,8 +1,9 @@
 """Review history, false-positive marks, deletion, retention and exports.
 
 sql-review/PRDs/005-review-history-export. A reviewer sees and changes only their own runs; the
-rule manager also reads every run of the tenant but changes none (Decision 1). A run the caller
-may not see answers 404 as if it did not exist. SQL text is returned only by the SQL export;
+rule manager also reads every run of the tenant but changes none (Decision 1). A recipient of a
+scheduled run reads that run's detail and exports only, reached through the e-mail link
+(Decision 8). A run the caller may not see answers 404 as if it did not exist. SQL text is returned only by the SQL export;
 descriptions, snippets and SQL never reach a log line.
 
 A run has no object limit (003 Decision 3): the list builds its titles without reading the
@@ -37,6 +38,9 @@ from app.infrastructure.repositories.review_repository import (
     RunHeading,
     RunResults,
     RunRow,
+)
+from app.infrastructure.repositories.scheduled_review_repository import (
+    ScheduledReviewRepository,
 )
 from app.infrastructure.repositories.user_repository import UserRepository
 from app.schemas.review_runs.contracts import (
@@ -153,6 +157,7 @@ def _rule_result_item(result: ReviewRuleResult) -> RuleResultItem:
             "line_reference": result.line_reference or "",
             "code_snippet": result.code_snippet or "",
             "false_positive": result.false_positive,
+            "rule_group_names": list(result.rule_group_names),
         }
     )
 
@@ -222,6 +227,7 @@ def _export_objects(results: RunResults, *, with_sql: bool) -> list[ExportObject
                         line_reference=result.line_reference or "",
                         code_snippet=result.code_snippet or "",
                         false_positive=result.false_positive,
+                        rule_groups=tuple(result.rule_group_names),
                     )
                     for result in rule_results
                 ],
@@ -233,6 +239,7 @@ def _export_objects(results: RunResults, *, with_sql: bool) -> list[ExportObject
                         line_reference=finding.line_reference or "",
                         code_snippet=finding.code_snippet or "",
                         false_positive=finding.false_positive,
+                        rule_groups=tuple(result.rule_group_names),
                     )
                     for result in rule_results
                     for finding in results.findings.get(result.review_rule_result_id, [])
@@ -265,14 +272,28 @@ class ReviewHistoryService:
         tenant = await active_tenant(self.users, context)
         return tenant.tenant_id, await acting_user(self.users, context)
 
-    async def _visible(self, context: RequestContext, run_id: str) -> tuple[RunRow, User]:
+    async def _visible(
+        self, context: RequestContext, run_id: str, *, recipient_reads: bool = False
+    ) -> tuple[RunRow, User]:
+        """The run if the caller owns it or is the rule manager; ``recipient_reads`` also lets
+        a recipient of a scheduled run read it (Decision 8). Anyone else gets 404.
+        """
+
         tenant_id, actor = await self._caller(context)
         row = await self.reviews.get_run(tenant_id, run_id)
-        if row is None or (
-            row.run.owner_user_id != actor.user_id and not context.has_role(ROLE_RULE_MANAGER)
-        ):
+        if row is None:
             raise _not_found()
-        return row, actor
+        if row.run.owner_user_id == actor.user_id or context.has_role(ROLE_RULE_MANAGER):
+            return row, actor
+        if (
+            recipient_reads
+            and row.run.kind == ReviewRunKind.SCHEDULED.value
+            and await ScheduledReviewRepository(self.session).is_recipient(
+                row.run.review_run_id, actor.email
+            )
+        ):
+            return row, actor
+        raise _not_found()
 
     async def _owned(self, context: RequestContext, run_id: str) -> tuple[RunRow, User]:
         row, actor = await self._visible(context, run_id)
@@ -317,7 +338,7 @@ class ReviewHistoryService:
     ) -> ReviewRunDetail:
         """One page of the stored objects of a run, in selection order (Requirement 3)."""
 
-        row, actor = await self._visible(context, run_id)
+        row, actor = await self._visible(context, run_id, recipient_reads=True)
         completed = row.run.status == ReviewRunStatus.COMPLETED.value
         results = (
             _object_results(
@@ -328,6 +349,8 @@ class ReviewHistoryService:
             if completed
             else []
         )
+        groups = await self.reviews.selected_groups_of_run(row.run.review_run_id)
+        codes = await self.reviews.selected_rule_codes_of_run(row.run.review_run_id)
         return ReviewRunDetail.model_validate(
             {
                 **_summary_fields(row, await self._heading(row), actor),
@@ -335,6 +358,11 @@ class ReviewHistoryService:
                 "results": results,
                 "results_page": page,
                 "results_page_size": page_size,
+                "selected_rule_groups": [
+                    {"id": group.public_id, "name": group.name} for group in groups
+                ],
+                "selected_rule_codes": codes,
+                "all_rules": not groups and not codes,
             }
         )
 
@@ -441,12 +469,13 @@ class ReviewHistoryService:
         return objects
 
     async def export_csv(self, context: RequestContext, run_id: str) -> ExportFile:
-        row, _ = await self._visible(context, run_id)
+        row, _ = await self._visible(context, run_id, recipient_reads=True)
         now = datetime.now(UTC)
         generated_at = _iso_ms(now)
         database = (
             _database_label((await self._heading(row)).databases)
-            if row.run.kind == ReviewRunKind.OBJECT.value
+            # A scheduled run reviews objects like an object run (008-scheduled-review-email).
+            if row.run.kind != ReviewRunKind.SCRIPT.value
             else ""
         )
         lines = [results_csv_header()]
@@ -478,7 +507,7 @@ class ReviewHistoryService:
         return ExportFile(f"sql-review-{_timestamp_ms(now)}.csv", "text/csv", content)
 
     async def export_sql(self, context: RequestContext, run_id: str) -> ExportFile:
-        row, _ = await self._visible(context, run_id)
+        row, _ = await self._visible(context, run_id, recipient_reads=True)
         objects = await self._export_chunks(row, with_sql=True)
         content = (
             build_sql_export(objects, script=row.run.kind == ReviewRunKind.SCRIPT.value)

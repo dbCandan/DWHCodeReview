@@ -17,7 +17,7 @@ import {formatDateTime} from '@/lib/format';
 import {applyFalsePositive, hasStoredSql} from '@/lib/reviewResults';
 import type {Tone} from '@/lib/utils';
 import {ReviewService} from '@/services/reviews';
-import type {ReviewRunStatus, ReviewRunSummary} from '@/types/sqlReview';
+import type {ReviewRunDetail, ReviewRunStatus, ReviewRunSummary} from '@/types/sqlReview';
 
 const PAGE_SIZE = 50;
 /** Objects of a run shown per page of its results (review-history-export Requirement 3). */
@@ -208,7 +208,7 @@ function RunRow({
       onClick={onSelect}
     >
       <span className="row">
-        <Badge tone={run.kind === 'object' ? 'info' : 'primary'}>{run.kind === 'object' ? 'Nesne' : 'SQL'}</Badge>
+        <Badge tone={KIND_BADGES[run.kind].tone}>{KIND_BADGES[run.kind].label}</Badge>
         <Badge tone={status.tone}>{status.label}</Badge>
         <span className="subtle">{formatDateTime(run.started_at)}</span>
       </span>
@@ -224,6 +224,12 @@ function RunRow({
     </button>
   );
 }
+
+const KIND_BADGES: Record<ReviewRunSummary['kind'], {tone: 'info' | 'primary' | 'warning'; label: string}> = {
+  object: {tone: 'info', label: 'Nesne'},
+  script: {tone: 'primary', label: 'SQL'},
+  scheduled: {tone: 'warning', label: 'Zamanlanmış'},
+};
 
 function RunDetail({runId}: {runId: string}) {
   const [resultsPage, setResultsPage] = useState(1);
@@ -266,6 +272,7 @@ function RunDetail({runId}: {runId: string}) {
           {run.finding_count} bulgu · {run.owner_display_name}
         </p>
         {run.subtitle && <p className="subtle mono">{run.subtitle}</p>}
+        <p className="subtle">{selectionLine(run)}</p>
         {!run.owned && <Alert tone="info">Bu inceleme başka bir kullanıcıya ait; yalnız okunabilir.</Alert>}
         {run.status === 'cancelled' && <Alert tone="info">Bu inceleme durduruldu; kısmi sonuç saklanmaz.</Alert>}
         {run.status === 'interrupted' && <Alert tone="warning">Bu inceleme yarıda kesildi; sonucu saklanmadı.</Alert>}
@@ -294,4 +301,15 @@ function RunDetail({runId}: {runId: string}) {
       </div>
     </Card>
   );
+}
+
+/** The run's rule selection (rule-group-selection Requirement 7, Decision 6). */
+function selectionLine(run: ReviewRunDetail): string {
+  const groups = run.selected_rule_groups ?? [];
+  const codes = run.selected_rule_codes ?? [];
+  if (run.all_rules || (groups.length === 0 && codes.length === 0)) return 'Kurallar: Tüm kurallar';
+  const parts: string[] = [];
+  if (groups.length > 0) parts.push(`Kural grupları: ${groups.map((group) => group.name).join(', ')}`);
+  if (codes.length > 0) parts.push(`Seçilen kurallar: ${codes.join(', ')}`);
+  return parts.join(' · ');
 }

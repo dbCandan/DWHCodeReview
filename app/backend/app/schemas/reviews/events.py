@@ -15,12 +15,28 @@ from app.schemas.reviews.contracts import (
 )
 
 
+class SelectedRuleGroup(BaseModel):
+    id: str = Field(description="Public identifier of the named rule group.")
+    name: str
+
+
 class RunStartedEvent(BaseModel):
     phase: Literal["run_started"] = "run_started"
     run_id: str
     kind: ReviewKindValue
     rule_version: int
     objects_total: int
+    selected_rule_groups: list[SelectedRuleGroup] = Field(
+        default_factory=list,
+        description="Groups the run reviews with, in version order; empty with all_rules.",
+    )
+    selected_rule_codes: list[str] = Field(
+        default_factory=list,
+        description="Single rules selected besides the groups, in version order.",
+    )
+    all_rules: bool = Field(
+        default=True, description="True when neither a group nor a rule was selected."
+    )
 
 
 class _ObjectFields(BaseModel):

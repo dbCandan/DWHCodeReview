@@ -9,6 +9,7 @@ import {
   isCompliant,
   objectTitle,
   orphanFindings,
+  resultGroupNames,
   ruleIsMarkable,
   ruleMatches,
   severityLabel,
@@ -17,6 +18,7 @@ import {
   statusTone,
   summarize,
   tierLabel,
+  UNGROUPED,
   type FalsePositiveTarget,
   type ResultFilter,
 } from '@/lib/reviewResults';
@@ -50,7 +52,8 @@ export function ReviewResultsView({
   const [filter, setFilter] = useState<ResultFilter>(NO_FILTER);
   const [pending, setPending] = useState<string | null>(null);
   const [markError, setMarkError] = useState<string | null>(null);
-  const filtered = filter.text !== '' || filter.status !== 'ALL' || filter.severity !== 'ALL';
+  const filtered = filter.text !== '' || filter.status !== 'ALL' || filter.severity !== 'ALL' || filter.group !== 'ALL';
+  const groupNames = useMemo(() => resultGroupNames(results), [results]);
 
   async function mark(target: FalsePositiveTarget, value: boolean) {
     if (runId === null) return;
@@ -126,6 +129,27 @@ export function ReviewResultsView({
               <option value="LOW">Düşük</option>
             </select>
           </div>
+          {groupNames.length > 0 && (
+            <div className="field">
+              <label className="field-label" htmlFor={`${filterId}-group`}>
+                Kural grubu
+              </label>
+              <select
+                id={`${filterId}-group`}
+                className="select"
+                value={filter.group}
+                onChange={(event) => setFilter({...filter, group: event.target.value})}
+              >
+                <option value="ALL">Tüm gruplar</option>
+                {groupNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+                <option value={UNGROUPED}>Grupsuz kurallar</option>
+              </select>
+            </div>
+          )}
           {filtered && (
             <Button size="sm" variant="ghost" onClick={() => setFilter(NO_FILTER)}>
               Süzgeci sıfırla
@@ -190,16 +214,18 @@ function ObjectResultCard({
           {result.rule_results.length > 0 && rules.length === 0 && (
             <p className="muted">Bu süzgeçle eşleşen kural sonucu yok.</p>
           )}
-          <ul className="list stack">
-            {rules.map((rule) => (
-              <RuleResultLine
-                key={rule.id}
-                rule={rule}
-                findings={findingsForRule(result, rule.rule_id)}
-                control={control}
-              />
-            ))}
-          </ul>
+          {rules.length > 0 && (
+            <ul className="list stack">
+              {rules.map((rule) => (
+                <RuleResultLine
+                  key={rule.id}
+                  rule={rule}
+                  findings={findingsForRule(result, rule.rule_id)}
+                  control={control}
+                />
+              ))}
+            </ul>
+          )}
           {orphans.length > 0 && (
             <div className="stack">
               {orphans.map((finding, index) => (
@@ -225,6 +251,12 @@ function RuleResultLine({rule, findings, control}: {rule: RuleResult; findings: 
           <Badge tone={severityTone(rule.severity)}>Önem: {severityLabel(rule.severity)}</Badge>
         )}
         <span className="mono">{rule.rule_id}</span>
+        {/* rule-group-selection Requirement 6: every group of the rule in the pinned version. */}
+        {(rule.rule_group_names ?? []).map((name) => (
+          <Badge key={name} tone="neutral">
+            {name}
+          </Badge>
+        ))}
         {rule.decision_basis && <span className="subtle mono">{rule.decision_basis}</span>}
         {findings.length > 0 && <span className="subtle">{findings.length} bulgu</span>}
         {markable && (

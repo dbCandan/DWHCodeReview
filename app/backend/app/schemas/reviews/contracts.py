@@ -5,14 +5,15 @@ The result shapes are shared by the live ``complete`` event and the stored run d
 """
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
 RuleResultStatusValue = Literal["PASS", "FAIL", "NOT_APPLICABLE", "UNKNOWN"]
 SeverityValue = Literal["HIGH", "MEDIUM", "LOW"]
 TierValue = Literal["critical", "normal"]
-ReviewKindValue = Literal["object", "script"]
+# A scheduled run (sql-review 008-scheduled-review-email) reviews objects in the background.
+ReviewKindValue = Literal["object", "script", "scheduled"]
 
 # Transport bounds only; the services apply the review limits with their own error codes.
 _TRANSPORT_SQL_MAX_LENGTH = 1_000_000
@@ -56,16 +57,46 @@ class ObjectSelectionItem(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+RuleGroupId = Annotated[str, Field(min_length=1, max_length=64)]
+RuleCode = Annotated[str, Field(min_length=1, max_length=16)]
+# A version holds at most 200 rules (rule-management Requirement 2).
+_RULE_CODES_MAX_ITEMS = 200
+
+
 class ObjectReviewRequest(BaseModel):
     selections: list[ObjectSelectionItem] = Field(
         max_length=SELECTION_TECHNICAL_MAX_ITEMS,
         description="No product limit; the list length is bounded only technically.",
+    )
+    rule_group_ids: list[RuleGroupId] = Field(
+        default_factory=list,
+        max_length=50,
+        description=(
+            "Named rule groups of the latest published version to review with; with rule_codes "
+            "the run uses their union, both empty run every rule (rule-group-selection "
+            "Requirement 4)."
+        ),
+    )
+    rule_codes: list[RuleCode] = Field(
+        default_factory=list,
+        max_length=_RULE_CODES_MAX_ITEMS,
+        description="Single rules of the latest published version to review with (Decision 6).",
     )
 
 
 class ScriptReviewRequest(BaseModel):
     sql: str = Field(max_length=_TRANSPORT_SQL_MAX_LENGTH)
     label: str | None = Field(default=None, max_length=_TRANSPORT_SQL_MAX_LENGTH)
+    rule_group_ids: list[RuleGroupId] = Field(
+        default_factory=list,
+        max_length=50,
+        description="Named rule groups to review with; with rule_codes empty runs every rule.",
+    )
+    rule_codes: list[RuleCode] = Field(
+        default_factory=list,
+        max_length=_RULE_CODES_MAX_ITEMS,
+        description="Single rules to review with besides the groups (Decision 6).",
+    )
 
 
 class RuleResultItem(BaseModel):
@@ -79,6 +110,10 @@ class RuleResultItem(BaseModel):
     line_reference: str
     code_snippet: str
     false_positive: bool
+    rule_group_names: list[str] = Field(
+        default_factory=list,
+        description="The rule's named groups in the pinned version, in group order.",
+    )
 
 
 class FindingItem(BaseModel):

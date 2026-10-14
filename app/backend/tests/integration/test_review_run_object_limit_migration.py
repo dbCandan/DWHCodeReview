@@ -17,6 +17,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import get_settings
+from tests.integration.test_rule_groups_migration import clear_rule_group_data
+from tests.integration.test_rule_proposals_migration import clear_rule_proposal_data
+from tests.integration.test_scheduled_reviews_migration import (
+    clear_scheduled_review_data,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -73,6 +78,11 @@ def test_the_object_limit_migration_goes_down_and_up_again(migrated_database: No
     owner = _owner()
     created: list[str] = []
     try:
+        # The step below 202610050001 refuses stored rule group data (rule-group-selection
+        # Decision 4); this test walks through it, so it starts without any.
+        clear_rule_proposal_data()
+        clear_scheduled_review_data()
+        clear_rule_group_data()
         asyncio.run(_run("DELETE FROM review_run WHERE object_count > 50"))
         assert _checks() == {"ck_review_run_object_count_positive": "CHECK ((object_count >= 1))"}
         created.append(_insert_run(owner, 5_000))

@@ -73,3 +73,51 @@ describe('review results', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('SQL Server zamanında yanıt vermedi.');
   });
 });
+
+describe('review results — rule groups (rule-group-selection Requirement 6)', () => {
+  function groupedResult() {
+    const result = liveResult();
+    result.rule_results = result.rule_results.map((rule) =>
+      rule.rule_id === 'Kural04'
+        ? {...rule, rule_group_names: ['Güvenlik', 'Performans']}
+        : rule.rule_id === 'Kural01'
+          ? {...rule, rule_group_names: ['Performans']}
+          : rule,
+    );
+    return result;
+  }
+
+  function shownRules(): string[] {
+    return screen.queryAllByText(/^Kural0\d$/, {selector: '.rule-line > .row > .mono'}).map((node) => node.textContent ?? '');
+  }
+
+  it('labels each rule result with every group of the rule', () => {
+    render(<ReviewResultsView results={[groupedResult()]} runId="run-1" canMark={false} onMarked={vi.fn()} />);
+    const line = screen.getByText('Kural04', {selector: '.rule-line > .row > .mono'}).closest('li')!;
+    expect(within(line).getByText('Güvenlik')).toBeInTheDocument();
+    expect(within(line).getByText('Performans')).toBeInTheDocument();
+  });
+
+  it('filters the results by a group or by ungrouped rules', () => {
+    render(<ReviewResultsView results={[groupedResult()]} runId="run-1" canMark={false} onMarked={vi.fn()} />);
+    const select = screen.getByLabelText('Kural grubu');
+    expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Tüm gruplar',
+      'Performans',
+      'Güvenlik',
+      'Grupsuz kurallar',
+    ]);
+    const all = shownRules();
+    fireEvent.change(select, {target: {value: 'Performans'}});
+    expect(shownRules()).toEqual(['Kural01', 'Kural04']);
+    fireEvent.change(select, {target: {value: 'Güvenlik'}});
+    expect(shownRules()).toEqual(['Kural04']);
+    fireEvent.change(select, {target: {value: '__grupsuz__'}});
+    expect(shownRules()).toEqual(all.filter((code) => code !== 'Kural01' && code !== 'Kural04'));
+  });
+
+  it('offers no group filter when no rule has a group', () => {
+    renderView();
+    expect(screen.queryByLabelText('Kural grubu')).toBeNull();
+  });
+});

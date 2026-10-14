@@ -59,7 +59,11 @@ async def save_draft(
     """Save the whole draft; the request carries the revision the client saw."""
 
     return await service.save_draft(
-        context, base_revision=body.base_revision, critical=body.critical, normal=body.normal
+        context,
+        base_revision=body.base_revision,
+        critical=body.critical,
+        normal=body.normal,
+        groups=body.groups,
     )
 
 
@@ -70,13 +74,17 @@ async def save_draft(
     dependencies=RuleManager,
     responses={
         200: {"description": "Taslak en son sürümle aynı; var olan sürüm döner"},
+        403: {"description": "Yalnız süper yönetici doğrudan yayımlar (publish_requires_approval)"},
         409: {"description": "Taslak başka biri tarafından değiştirildi"},
     },
 )
 async def publish(
     body: RuleSetPublishRequest, response: Response, context: CurrentContext, service: Service
 ) -> RuleSetVersionDetail:
-    """Publish the draft as the next immutable version; an unchanged draft returns the latest."""
+    """Publish the draft as the next immutable version; only the super admin (rule-proposals).
+
+    An unchanged draft returns the latest version. A rule manager sends a publish request instead.
+    """
 
     outcome = await service.publish(context, base_revision=body.base_revision)
     if not outcome.created:

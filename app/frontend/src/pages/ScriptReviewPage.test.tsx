@@ -1,14 +1,34 @@
 import {fireEvent, screen, waitFor} from '@testing-library/react';
-import {describe, expect, it, vi} from 'vitest';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
 import ScriptReviewPage, {DATA_NOTE, TOO_LONG_MESSAGE} from './ScriptReviewPage';
 import {ReviewService} from '@/services/reviews';
-import {deferred, renderWithSession} from '@/test/render';
+import {RuleSetService} from '@/services/ruleSet';
+import {apiError, deferred, renderWithSession} from '@/test/render';
 
 function button() {
   return screen.getByRole('button', {name: /Kurallara göre incele|İnceleniyor/});
 }
 
+const GROUPED_VERSION = {
+  number: 3,
+  published_at: '2026-10-06T10:00:00Z',
+  published_by_name: 'Mehmet Kural',
+  source: 'arayuz' as const,
+  critical: [{id: 'Kural01', text: 'a', summary: '', requires_metadata: false, rule_group_ids: ['grp-sec']}],
+  normal: [{id: 'Kural09', text: 'b', summary: '', requires_metadata: false, rule_group_ids: ['grp-perf']}],
+  groups: [
+    {id: 'grp-perf', name: 'Performans', description: ''},
+    {id: 'grp-sec', name: 'Güvenlik', description: ''},
+  ],
+  critical_count: 1,
+  normal_count: 1,
+};
+
 describe('script review page', () => {
+  beforeEach(() => {
+    vi.spyOn(RuleSetService, 'latest').mockRejectedValue(apiError(404, 'no_published_rule_set'));
+  });
+
   it('shows the fixed data note next to the text field', () => {
     renderWithSession(<ScriptReviewPage />);
     expect(screen.getByText(DATA_NOTE)).toBeInTheDocument();
@@ -50,12 +70,26 @@ describe('script review page', () => {
     });
     fireEvent.change(screen.getByLabelText('SQL'), {target: {value: '\nSELECT 1\n'}});
     fireEvent.click(button());
-    await waitFor(() => expect(stream).toHaveBeenCalledWith('SELECT 1', 'yükleme', expect.any(AbortSignal), expect.any(Function)));
+    await waitFor(() => expect(stream).toHaveBeenCalledWith('SELECT 1', 'yükleme', expect.any(AbortSignal), expect.any(Function), []));
     expect(screen.getByLabelText('SQL')).toBeDisabled();
     expect(screen.getByLabelText('Sonuçlarda görünecek ad (isteğe bağlı)')).toBeDisabled();
     expect(button()).toBeDisabled();
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
     running.resolve();
+  });
+});
+
+describe('script review page — rule groups (rule-group-selection Requirement 4, 8)', () => {
+  it('starts the review with the rules of groups and single rules (Decision 6)', async () => {
+    vi.spyOn(RuleSetService, 'latest').mockResolvedValue(GROUPED_VERSION);
+    const stream = vi.spyOn(ReviewService, 'streamScriptReview').mockResolvedValue(undefined);
+    renderWithSession(<ScriptReviewPage />);
+    fireEvent.click(await screen.findByLabelText('Performans (1 kural)'));
+    fireEvent.click(screen.getByRole('checkbox', {name: /^Kural01/}));
+    fireEvent.change(screen.getByLabelText('SQL'), {target: {value: 'SELECT 1'}});
+    fireEvent.click(button());
+    await waitFor(() => expect(stream).toHaveBeenCalled());
+    expect(stream.mock.calls[0][4]).toEqual(['Kural01', 'Kural09']);
   });
 });

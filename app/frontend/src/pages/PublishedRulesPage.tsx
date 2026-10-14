@@ -2,16 +2,19 @@ import {useId, useState} from 'react';
 import {Badge} from '@/components/ui/Badge';
 import {PageHeader} from '@/components/ui/PageHeader';
 import {EmptyState, ErrorState, LoadingState} from '@/components/ui/States';
+import {useAuth} from '@/contexts/AuthContext';
 import {useResource} from '@/hooks/useResource';
 import {describeError, errorCode} from '@/lib/errorMessages';
 import {formatDateTime} from '@/lib/format';
-import {publisherName, ruleMatchesSearch, type Tier} from '@/lib/rules';
+import {displaySummary, publisherName, ruleMatchesSearch, type Tier} from '@/lib/rules';
 import {RuleSetService} from '@/services/ruleSet';
-import type {RuleItem, RuleSetVersionDetail} from '@/types/sqlReview';
+import type {RuleGroupItem, RuleItem, RuleSetVersionDetail} from '@/types/sqlReview';
 
 /**
- * Read-only published rules for both roles (sql-review rule-management Requirement 8, 11):
- * the latest version by default, any older version from the list, search by id or text.
+ * Read-only published rules for both roles (sql-review rule-management Requirement 8, 11, 12):
+ * the latest version by default, any older version from the list, search by id, summary or text.
+ * Everyone but the super admin sees each rule as one sentence; the super admin also sees the
+ * detailed text the LLM receives. This is a view choice, not an access boundary.
  */
 export default function PublishedRulesPage() {
   const [selected, setSelected] = useState<number | null>(null);
@@ -76,20 +79,47 @@ export default function PublishedRulesPage() {
 }
 
 function PublishedVersion({version, search}: {version: RuleSetVersionDetail; search: string}) {
+  const {user} = useAuth();
+  const detailed = Boolean(user?.is_super_admin);
   return (
     <div className="stack">
       <p className="subtle">
         Sürüm {version.number} · {formatDateTime(version.published_at)} · yayımlayan: {publisherName(version)}
       </p>
+      {version.groups.length > 0 && (
+        <section className="card" aria-label="Kural grupları">
+          <div className="card-body stack-tight">
+            <h2>Kural grupları</h2>
+            <ul className="list stack-tight">
+              {version.groups.map((group) => (
+                <li key={group.id}>{group.description ? `${group.name}: ${group.description}` : group.name}</li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
       <div className="split">
-        <ReadOnlyColumn tier="critical" rules={version.critical} search={search} />
-        <ReadOnlyColumn tier="normal" rules={version.normal} search={search} />
+        <ReadOnlyColumn tier="critical" rules={version.critical} groups={version.groups} search={search} detailed={detailed} />
+        <ReadOnlyColumn tier="normal" rules={version.normal} groups={version.groups} search={search} detailed={detailed} />
       </div>
     </div>
   );
 }
 
-function ReadOnlyColumn({tier, rules, search}: {tier: Tier; rules: RuleItem[]; search: string}) {
+function ReadOnlyColumn({
+  tier,
+  rules,
+  groups,
+  search,
+  detailed,
+}: {
+  tier: Tier;
+  rules: RuleItem[];
+  groups: RuleGroupItem[];
+  search: string;
+  detailed: boolean;
+}) {
+  const names = new Map(groups.map((group) => [group.id, group.name]));
   const headingId = useId();
   const visible = rules.filter((rule) => ruleMatchesSearch(rule, search));
   return (
@@ -110,8 +140,22 @@ function ReadOnlyColumn({tier, rules, search}: {tier: Tier; rules: RuleItem[]; s
                 <div className="row">
                   <strong className="mono">{rule.id}</strong>
                   {rule.requires_metadata && <Badge tone="primary">Nesne meta verisi gerekir</Badge>}
+                  {(rule.rule_group_ids ?? [])
+                    .filter((id) => names.has(id))
+                    .map((id) => (
+                      <Badge key={id} tone="neutral">
+                        {names.get(id)}
+                      </Badge>
+                    ))}
                 </div>
-                <p className="rule-text">{rule.text}</p>
+                {detailed ? (
+                  <>
+                    {rule.summary?.trim() && <p className="subtle">Özet: {rule.summary}</p>}
+                    <p className="rule-text">{rule.text}</p>
+                  </>
+                ) : (
+                  <p>{displaySummary(rule)}</p>
+                )}
               </li>
             ))}
           </ol>

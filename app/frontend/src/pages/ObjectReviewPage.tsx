@@ -1,4 +1,5 @@
 import {useRef, useState} from 'react';
+import {RuleSelectionPicker} from '@/components/review/RuleSelectionPicker';
 import {LastReviewBanner} from '@/components/review/LastReviewBanner';
 import {ObjectTable} from '@/components/review/ObjectTable';
 import {Alert} from '@/components/ui/Alert';
@@ -43,6 +44,7 @@ type Gather =
  */
 export default function ObjectReviewPage() {
   const {session, startObjectReview} = useReviewSession();
+  const [ruleCodes, setRuleCodes] = useState<string[]>([]);
   const [database, setDatabase] = useState('');
   const [text, setText] = useState('');
   const [type, setType] = useState('');
@@ -155,6 +157,8 @@ export default function ObjectReviewPage() {
         </div>
       </Card>
 
+      <RuleSelectionPicker value={ruleCodes} disabled={running} onChange={setRuleCodes} />
+
       <Card
         title="Nesne seçimi"
         actions={
@@ -167,7 +171,7 @@ export default function ObjectReviewPage() {
             </Button>
             <Button
               variant="primary"
-              onClick={() => startObjectReview(selected)}
+              onClick={() => startObjectReview(selected, ruleCodes)}
               disabled={selected.length === 0 || running || gathering || beyondTechnicalLimit}
               aria-label={
                 selected.length === 0 ? 'İnceleme için en az bir nesne seçin' : `Seçilen ${selected.length} nesneyi incele`

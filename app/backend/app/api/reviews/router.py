@@ -195,7 +195,11 @@ def get_script_review_service(
 ) -> ReviewRunService:
     # 004 Requirement 12: the script review never depends on the SQL Server adapter.
     return ReviewRunService(
-        session, settings=settings, runtime=runtime, llm_endpoint=endpoint, limiter=limiter
+        session,
+        settings=settings,
+        runtime=runtime,
+        llm_endpoint=endpoint,
+        limiter=limiter,
     )
 
 
@@ -214,7 +218,9 @@ async def list_databases(
 
 
 @catalog_router.get(
-    "/databases/{database}/objects", response_model=CatalogObjectPage, responses=_CATALOG_ERRORS
+    "/databases/{database}/objects",
+    response_model=CatalogObjectPage,
+    responses=_CATALOG_ERRORS,
 )
 async def list_objects(
     service: CatalogService,
@@ -256,6 +262,8 @@ async def start_object_review(
             ObjectSelection(item.database, item.schema_, item.name, item.type_code)
             for item in body.selections
         ],
+        body.rule_group_ids,
+        body.rule_codes,
     )
     execution.start()
     return ReviewEventStream(execution)
@@ -274,6 +282,8 @@ async def start_script_review(
 ) -> ReviewEventStream:
     """Review pasted SQL text with live progress; SQL Server is never contacted."""
 
-    execution = await service.start_script_review(context, body.sql, body.label)
+    execution = await service.start_script_review(
+        context, body.sql, body.label, body.rule_group_ids, body.rule_codes
+    )
     execution.start()
     return ReviewEventStream(execution)

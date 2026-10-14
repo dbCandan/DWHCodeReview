@@ -3,6 +3,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 import ObjectReviewPage from './ObjectReviewPage';
 import {CatalogService, type ObjectQuery} from '@/services/catalog';
 import {ReviewService} from '@/services/reviews';
+import {RuleSetService} from '@/services/ruleSet';
 import {apiError, renderWithSession} from '@/test/render';
 import type {CatalogObject, CatalogObjectPage} from '@/types/sqlReview';
 
@@ -27,8 +28,25 @@ async function chooseDatabase(name: string) {
   fireEvent.change(select, {target: {value: name}});
 }
 
+const GROUPED_VERSION = {
+  number: 3,
+  published_at: '2026-10-06T10:00:00Z',
+  published_by_name: 'Mehmet Kural',
+  source: 'arayuz' as const,
+  critical: [{id: 'Kural01', text: 'a', summary: '', requires_metadata: false, rule_group_ids: ['grp-sec']}],
+  normal: [{id: 'Kural09', text: 'b', summary: '', requires_metadata: false, rule_group_ids: ['grp-perf']}],
+  groups: [
+    {id: 'grp-perf', name: 'Performans', description: ''},
+    {id: 'grp-sec', name: 'Güvenlik', description: ''},
+  ],
+  critical_count: 1,
+  normal_count: 1,
+};
+
 describe('object review page', () => {
   beforeEach(() => {
+    // No published groups unless a test publishes some: the picker then stays hidden.
+    vi.spyOn(RuleSetService, 'latest').mockRejectedValue(apiError(404, 'no_published_rule_set'));
     vi.spyOn(CatalogService, 'databases').mockResolvedValue({items: ['DWH', 'MART'], page: 1, page_size: 500, total: 2});
     vi.spyOn(CatalogService, 'objects').mockImplementation(async (database) =>
       page(objects(database === 'DWH' ? 'dwh' : 'mart', database === 'DWH' ? 40 : 30)),
@@ -225,5 +243,25 @@ describe('object review page', () => {
     fireEvent.click(screen.getByRole('button', {name: 'Seçimi temizle'}));
     expect(screen.getByText('0 seçili · 0 veritabanı')).toBeInTheDocument();
     expect(screen.getByRole('button', {name: 'İnceleme için en az bir nesne seçin'})).toBeDisabled();
+  });
+});
+
+describe('object review page — rule groups (rule-group-selection Requirement 4, 8)', () => {
+  beforeEach(() => {
+    vi.spyOn(CatalogService, 'databases').mockResolvedValue({items: ['DWH'], page: 1, page_size: 500, total: 1});
+    vi.spyOn(CatalogService, 'objects').mockResolvedValue(page(objects('dwh', 2)));
+    vi.spyOn(RuleSetService, 'latest').mockResolvedValue(GROUPED_VERSION);
+  });
+
+  it('starts the review with the rules of a selected group', async () => {
+    const stream = vi.spyOn(ReviewService, 'streamObjectReview').mockResolvedValue(undefined);
+    renderWithSession(<ObjectReviewPage />);
+    fireEvent.click(await screen.findByLabelText('Güvenlik (1 kural)'));
+    await chooseDatabase('DWH');
+    await screen.findByText('dwh_01');
+    fireEvent.click(screen.getByLabelText('Görünen nesnelerin tümünü seç'));
+    fireEvent.click(screen.getByRole('button', {name: 'Seçilen 2 nesneyi incele'}));
+    await waitFor(() => expect(stream).toHaveBeenCalled());
+    expect(stream.mock.calls[0][3]).toEqual(['Kural01']);
   });
 });

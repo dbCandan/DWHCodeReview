@@ -1,4 +1,5 @@
 import {useState, type FormEvent} from 'react';
+import {RuleSelectionPicker} from '@/components/review/RuleSelectionPicker';
 import {LastReviewBanner} from '@/components/review/LastReviewBanner';
 import {Alert} from '@/components/ui/Alert';
 import {Button} from '@/components/ui/Button';
@@ -20,6 +21,7 @@ export default function ScriptReviewPage() {
   const {session, startScriptReview} = useReviewSession();
   const [label, setLabel] = useState('');
   const [sql, setSql] = useState('');
+  const [ruleCodes, setRuleCodes] = useState<string[]>([]);
   const running = session.phase === 'running';
   const length = sql.trim().length;
   const tooLong = length > SQL_TEXT_LIMIT;
@@ -27,7 +29,7 @@ export default function ScriptReviewPage() {
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (canSubmit) startScriptReview(sql.trim(), label);
+    if (canSubmit) startScriptReview(sql.trim(), label, ruleCodes);
   }
 
   return (
@@ -83,6 +85,7 @@ export default function ScriptReviewPage() {
               </p>
             )}
           </div>
+          <RuleSelectionPicker value={ruleCodes} disabled={running} onChange={setRuleCodes} />
           <div className="row">
             <Button type="submit" variant="primary" disabled={!canSubmit}>
               {running ? 'İnceleniyor…' : 'Kurallara göre incele'}

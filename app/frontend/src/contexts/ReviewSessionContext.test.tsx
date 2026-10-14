@@ -59,6 +59,7 @@ describe('review session', () => {
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer test-token');
     expect(JSON.parse(String(init?.body))).toEqual({
       selections: [{database: 'DWH', schema: 'dbo', name: 'usp_load', type_code: 'P'}],
+      rule_codes: [],
     });
 
     const live = screen.getByRole('dialog', {name: 'Canlı inceleme'});
@@ -111,7 +112,7 @@ describe('review session', () => {
       type_code: 'P',
     });
     const events: ReviewStreamEvent[] = [
-      {phase: 'run_started', run_id: 'run-1', rule_version: 2, objects_total: total, kind: 'object'},
+      {phase: 'run_started', run_id: 'run-1', rule_version: 2, objects_total: total, kind: 'object', all_rules: true},
     ];
     for (let index = 0; index < 300; index += 1) {
       events.push({...fields(index), phase: 'object_start'});
@@ -177,7 +178,7 @@ describe('review session', () => {
   it('shows the error event of the stream with its mapped message', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       eventStreamResponse([
-        {phase: 'run_started', run_id: 'run-9', rule_version: 1, objects_total: 1, kind: 'script'},
+        {phase: 'run_started', run_id: 'run-9', rule_version: 1, objects_total: 1, kind: 'script', all_rules: true},
         {phase: 'error', code: 'review_failed', message: 'ham ileti gösterilmez'},
       ]),
     );
@@ -214,7 +215,7 @@ describe('review session', () => {
     fireEvent.click(screen.getByRole('button', {name: 'start script'}));
     await phase('completed');
     expect(fetchMock.mock.calls[0][0]).toBe('/api/dwhcodereview/v1/script-reviews');
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({sql: 'SELECT 1', label: null});
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({sql: 'SELECT 1', label: null, rule_codes: []});
     expect(screen.getByText(/Yapıştırılan SQL/)).toBeInTheDocument();
     expect(screen.getByRole('button', {name: 'SQL indir'})).toBeDisabled();
   });

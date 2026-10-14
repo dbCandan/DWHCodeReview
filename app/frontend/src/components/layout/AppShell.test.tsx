@@ -7,6 +7,7 @@ import {clearAuth, readAccessToken, writeSession} from '@/lib/authStorage';
 import messages from '@/locales/tr.json';
 import {AuthService} from '@/services/auth';
 import {ConnectionService} from '@/services/connections';
+import {RuleProposalService} from '@/services/ruleProposals';
 import {testUser, type TestRole} from '@/test/render';
 import {MemoryRouter} from 'react-router';
 
@@ -36,6 +37,18 @@ function connectionViews(editable: boolean) {
   const managed_by = editable ? 'local_process' : 'deployment';
   vi.spyOn(ConnectionService, 'sql').mockResolvedValue({environment, editable, configured: true, managed_by});
   vi.spyOn(ConnectionService, 'llm').mockResolvedValue({environment, editable, chat_api: 'openai', model: 'm'});
+  proposalMenu(false, false);
+}
+
+function proposalMenu(canPropose: boolean, canDecide: boolean, pending = {proposals: 0, requests: 0}) {
+  vi.spyOn(RuleProposalService, 'capabilities').mockResolvedValue({can_propose: canPropose, can_decide: canDecide});
+  vi.spyOn(RuleProposalService, 'list').mockResolvedValue({items: [], page: 1, page_size: 1, total: pending.proposals});
+  vi.spyOn(RuleProposalService, 'publishRequests').mockResolvedValue({
+    items: [],
+    page: 1,
+    page_size: 1,
+    total: pending.requests,
+  });
 }
 
 describe('application shell', () => {
@@ -49,6 +62,7 @@ describe('application shell', () => {
       'Nesne incelemesi',
       'SQL betiği incelemesi',
       'İnceleme geçmişi',
+      'Zamanlanmış incelemeler',
       'Yayımlanmış kurallar',
     ]);
     expect(ConnectionService.sql).not.toHaveBeenCalled();
@@ -62,6 +76,7 @@ describe('application shell', () => {
       'Nesne incelemesi',
       'SQL betiği incelemesi',
       'İnceleme geçmişi',
+      'Zamanlanmış incelemeler',
       'Yayımlanmış kurallar',
       'Kurallar',
       'SQL bağlantısı',
@@ -72,6 +87,7 @@ describe('application shell', () => {
 
   it('hides the connection pages when the backend reports them read-only (nonprod)', async () => {
     vi.restoreAllMocks();
+    proposalMenu(false, false);
     connectionViews(false);
     renderApp('kural-yoneticisi');
     await screen.findByRole('link', {name: 'Kurallar'});
@@ -83,6 +99,7 @@ describe('application shell', () => {
   it('offers the SQL connection page in nonprod only to the super admin who may edit it', async () => {
     // sql-server-connection Requirement 5: the backend reports editable only to the super admin.
     vi.restoreAllMocks();
+    proposalMenu(false, false);
     vi.spyOn(ConnectionService, 'llm').mockResolvedValue({
       environment: 'nonprod',
       editable: false,
@@ -100,10 +117,12 @@ describe('application shell', () => {
     await screen.findByRole('link', {name: 'SQL bağlantısı'});
     expect(menuLinks()).not.toContain('LLM bağlantısı');
     expect(menuLinks()).toContain('Kullanıcılar');
+    expect(menuLinks()).toContain('Zamanlama ayarı');
   });
 
   it('hides the nonprod SQL connection page from the rule manager while the super admin manages it', async () => {
     vi.restoreAllMocks();
+    proposalMenu(false, false);
     vi.spyOn(ConnectionService, 'llm').mockResolvedValue({
       environment: 'nonprod',
       editable: false,
@@ -126,6 +145,25 @@ describe('application shell', () => {
     renderApp('super_admin');
     await screen.findByRole('link', {name: 'Kullanıcılar'});
     expect(menuLinks()).toContain('Kurallar');
+  });
+
+  it('offers "Kural önerilerim" to a user the super admin allowed to propose', async () => {
+    proposalMenu(true, false);
+    renderApp('inceleyici');
+    await screen.findByRole('link', {name: 'Kural önerilerim'});
+    expect(menuLinks()).not.toContain('Kural onayları');
+  });
+
+  it('offers "Kural onayları" with the pending count to the super admin', async () => {
+    proposalMenu(true, true, {proposals: 2, requests: 1});
+    renderApp('super_admin');
+    const link = await screen.findByRole('link', {name: /Kural onayları/});
+    expect(await within(link).findByLabelText('3 bekleyen')).toHaveTextContent('3');
+  });
+
+  it('shows the forbidden screen when a reviewer opens the approvals address directly', async () => {
+    renderApp('inceleyici', '/kural-onaylari');
+    expect(await screen.findByRole('heading', {name: messages['access.forbidden.title']})).toBeInTheDocument();
   });
 
   it('shows the forbidden screen when a reviewer opens the rules address directly', async () => {

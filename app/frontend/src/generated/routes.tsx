@@ -9,7 +9,11 @@ import {
   ObjectReviewPage,
   PublishedRulesPage,
   ReviewHistoryPage,
+  RuleApprovalsPage,
+  RuleProposalsPage,
   RulesPage,
+  ScheduledReviewSettingsPage,
+  ScheduledReviewsPage,
   ScriptReviewPage,
   SqlConnectionPage,
   UserAdministrationPage,
@@ -27,13 +31,29 @@ export const GeneratedRoutes = (
     <Route path="/sql-inceleme" element={<RoleRoute require="review"><ScriptReviewPage /></RoleRoute>} />
     <Route path="/gecmis" element={<RoleRoute require="review"><ReviewHistoryPage /></RoleRoute>} />
     <Route
+      path="/zamanlanmis-incelemeler"
+      element={<RoleRoute require="review"><ScheduledReviewsPage /></RoleRoute>}
+    />
+    <Route
       path="/yayimlanmis-kurallar"
       element={<RoleRoute require="review"><PublishedRulesPage /></RoleRoute>}
     />
     <Route path="/kurallar" element={<RoleRoute require="manageRules"><RulesPage /></RoleRoute>} />
+    <Route
+      path="/kural-onerilerim"
+      element={<RoleRoute require="review"><RuleProposalsPage /></RoleRoute>}
+    />
+    <Route
+      path="/kural-onaylari"
+      element={<RoleRoute require="administerUsers"><RuleApprovalsPage /></RoleRoute>}
+    />
     <Route path="/ayarlar/sql" element={<RoleRoute require="manageRules"><SqlConnectionPage /></RoleRoute>} />
     <Route path="/ayarlar/llm" element={<RoleRoute require="manageRules"><LlmConnectionPage /></RoleRoute>} />
     <Route path="/llm-cagrilari" element={<RoleRoute require="manageRules"><LlmCallsPage /></RoleRoute>} />
+    <Route
+      path="/ayarlar/zamanlama"
+      element={<RoleRoute require="administerUsers"><ScheduledReviewSettingsPage /></RoleRoute>}
+    />
     <Route
       path="/kullanicilar"
       element={<RoleRoute require="administerUsers"><UserAdministrationPage /></RoleRoute>}

@@ -52,19 +52,30 @@ SCRIPT_DEFAULT_LABEL = "Yapıştırılan SQL"
 
 @dataclass(frozen=True, slots=True)
 class ReviewRule:
-    """One rule of the pinned version as the review sends it: code, group, text and flag."""
+    """One rule of the pinned version as the review sends it: code, groups, text and flag.
+
+    ``group_names`` are the rule's named groups in the pinned version, in group order, empty when
+    ungrouped (sql-review/PRDs/007-rule-group-selection Requirement 6); they never reach the LLM.
+    """
 
     code: str
     tier: RulePriorityGroup
     text: str = field(repr=False)
     requires_metadata: bool = False
+    group_names: tuple[str, ...] = ()
 
 
 def ordered_rules(rule_set: PublishedRuleSet) -> tuple[ReviewRule, ...]:
     """Critical rules first, then normal rules, each in published order (Requirement 7)."""
 
     return tuple(
-        ReviewRule(rule.code, tier, rule.text, rule.requires_metadata)
+        ReviewRule(
+            rule.code,
+            tier,
+            rule.text,
+            rule.requires_metadata,
+            rule_set.rules.names_of(rule),
+        )
         for tier, rules in rule_set.rules.grouped()
         for rule in rules
     )

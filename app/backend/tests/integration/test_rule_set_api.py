@@ -64,7 +64,13 @@ def rule_logs() -> Iterator[_Records]:
 
 
 def _rule(code: str, text_value: str, flag: bool = False) -> dict[str, Any]:
-    return {"id": code, "text": text_value, "requires_metadata": flag}
+    return {
+        "id": code,
+        "text": text_value,
+        "summary": "",
+        "requires_metadata": flag,
+        "rule_group_ids": [],
+    }
 
 
 async def _workspace(auth: AuthHarness, manager: RoleSession) -> dict[str, Any]:
@@ -80,12 +86,26 @@ async def _save(
     revision: int,
     critical: list[dict[str, Any]],
     normal: list[dict[str, Any]] | None = None,
+    groups: list[dict[str, Any]] | None = None,
 ) -> Any:
     return await auth.client.put(
         f"{auth.prefix}/rule-set/draft",
-        json={"base_revision": revision, "critical": critical, "normal": normal or []},
+        json={
+            "base_revision": revision,
+            "critical": critical,
+            "normal": normal or [],
+            "groups": groups or [],
+        },
         headers=manager.headers,
     )
+
+
+def _group(name: str, description: str = "") -> dict[str, Any]:
+    return {"id": str(uuid4()), "name": name, "description": description}
+
+
+def _in_group(rule: dict[str, Any], *groups: dict[str, Any]) -> dict[str, Any]:
+    return {**rule, "rule_group_ids": [group["id"] for group in groups]}
 
 
 def _next(code: str, step: int = 0) -> str:
@@ -107,8 +127,13 @@ async def test_imported_file_is_version_one_for_both_roles(
         assert version["published_by_name"] is None
         assert version["published_at"].startswith("2026-04-10T14:05:15")
         assert (version["critical_count"], version["normal_count"]) == (10, 1)
-        assert version["critical"] == source["published"]["critical"]
-        assert version["normal"] == source["published"]["normal"]
+        # The imported file predates named groups: every rule is ungrouped.
+        for priority in ("critical", "normal"):
+            assert version[priority] == [
+                {**rule, "summary": "", "rule_group_ids": []}
+                for rule in source["published"][priority]
+            ]
+        assert version["groups"] == []
 
 
 async def test_workspace_shows_draft_latest_version_and_next_free_code(
@@ -158,6 +183,7 @@ async def test_stale_revision_is_a_conflict_and_writes_nothing(
     auth: AuthHarness, role_sessions: RoleSessions
 ) -> None:
     manager = await role_sessions.rule_manager()
+    admin = await role_sessions.super_admin()
     before = await _workspace(auth, manager)
     first = await _save(auth, manager, before["revision"], before["critical"], before["normal"])
     assert first.status_code == 200
@@ -172,7 +198,7 @@ async def test_stale_revision_is_a_conflict_and_writes_nothing(
     stale_publish = await auth.client.post(
         f"{auth.prefix}/rule-set/versions",
         json={"base_revision": before["revision"]},
-        headers=manager.headers,
+        headers=admin.headers,
     )
 
     assert stale.status_code == 409
@@ -239,6 +265,7 @@ async def test_publish_creates_numbered_immutable_versions_and_repeats_idempoten
     auth: AuthHarness, role_sessions: RoleSessions
 ) -> None:
     manager = await role_sessions.rule_manager()
+    admin = await role_sessions.super_admin()
     reviewer = await role_sessions.reviewer()
     before = await _workspace(auth, manager)
     marker = uuid4().hex
@@ -255,22 +282,31 @@ async def test_publish_creates_numbered_immutable_versions_and_repeats_idempoten
         f"{auth.prefix}/rule-set/versions/{previous_number}", headers=reviewer.headers
     )
 
-    created = await auth.client.post(
+    refused = await auth.client.post(
         f"{auth.prefix}/rule-set/versions",
         json={"base_revision": revision},
         headers=manager.headers,
+    )
+    created = await auth.client.post(
+        f"{auth.prefix}/rule-set/versions",
+        json={"base_revision": revision},
+        headers=admin.headers,
     )
     repeated = await auth.client.post(
         f"{auth.prefix}/rule-set/versions",
         json={"base_revision": revision},
-        headers=manager.headers,
+        headers=admin.headers,
     )
+
+    # rule-proposals Decision 3: a rule manager sends the draft for approval instead.
+    assert refused.status_code == 403
+    assert refused.json()["detail"]["code"] == "publish_requires_approval"
 
     assert created.status_code == 201, created.text
     version = created.json()
     assert version["number"] == previous_number + 1
     assert version["source"] == "arayuz"
-    assert version["published_by_name"] == manager.display_name
+    assert version["published_by_name"] == admin.display_name
     assert version["critical"][-1]["text"] == f"yayın {marker}"
     assert repeated.status_code == 200
     assert repeated.json() == version
@@ -295,6 +331,7 @@ async def test_concurrent_publishes_of_one_draft_create_one_version(
     auth: AuthHarness, role_sessions: RoleSessions
 ) -> None:
     manager = await role_sessions.rule_manager()
+    admin = await role_sessions.super_admin()
     before = await _workspace(auth, manager)
     saved = await _save(
         auth,
@@ -310,7 +347,7 @@ async def test_concurrent_publishes_of_one_draft_create_one_version(
             auth.client.post(
                 f"{auth.prefix}/rule-set/versions",
                 json={"base_revision": revision},
-                headers=manager.headers,
+                headers=admin.headers,
             )
             for _ in range(2)
         )
@@ -324,6 +361,7 @@ async def test_an_empty_draft_cannot_be_published(
     auth: AuthHarness, role_sessions: RoleSessions
 ) -> None:
     manager = await role_sessions.rule_manager()
+    admin = await role_sessions.super_admin()
     before = await _workspace(auth, manager)
     emptied = await _save(auth, manager, before["revision"], [], [])
     assert emptied.status_code == 200
@@ -331,7 +369,7 @@ async def test_an_empty_draft_cannot_be_published(
     response = await auth.client.post(
         f"{auth.prefix}/rule-set/versions",
         json={"base_revision": emptied.json()["revision"]},
-        headers=manager.headers,
+        headers=admin.headers,
     )
 
     assert response.status_code == 422
@@ -466,3 +504,213 @@ async def test_review_runs_read_the_latest_published_version_once(
     assert pinned.version_id == version_id
     assert [rule.code for rule in pinned.rules.critical] == [r["id"] for r in latest["critical"]]
     assert [rule.text for rule in pinned.rules.normal] == [r["text"] for r in latest["normal"]]
+
+
+async def test_groups_are_saved_published_frozen_and_left_by_removed_groups(
+    auth: AuthHarness, role_sessions: RoleSessions, rule_logs: _Records
+) -> None:
+    """rule-group-selection Requirement 1-3, Decision 1: a rule in several groups (Acceptance 2)."""
+
+    manager = await role_sessions.rule_manager()
+    reviewer = await role_sessions.reviewer()
+    before = await _workspace(auth, manager)
+    performance = _group("  Performans ", " Sorgu maliyeti ")
+    security = _group("Güvenlik")
+    first, *rest = before["critical"]
+    grouped = [
+        _in_group(first, security, performance),
+        *[_in_group(rule, performance) for rule in rest],
+    ]
+    try:
+
+        saved = await _save(
+            auth,
+            manager,
+            before["revision"],
+            grouped,
+            before["normal"],
+            [performance, security],
+        )
+
+        assert saved.status_code == 200, saved.text
+        workspace = saved.json()
+        assert workspace["groups"] == [
+            {
+                "id": performance["id"],
+                "name": "Performans",
+                "description": "Sorgu maliyeti",
+            },
+            {"id": security["id"], "name": "Güvenlik", "description": ""},
+        ]
+        # Memberships come back in the draft's group order, whatever the submitted order.
+        assert workspace["critical"][0]["rule_group_ids"] == [performance["id"], security["id"]]
+        assert all(rule["rule_group_ids"] == [] for rule in workspace["normal"])
+        assert workspace["draft_differs"] is True
+
+        published = await auth.client.post(
+            f"{auth.prefix}/rule-set/versions",
+            json={"base_revision": workspace["revision"]},
+            headers=(await role_sessions.super_admin()).headers,
+        )
+        assert published.status_code == 201, published.text
+        version = published.json()
+        assert version["groups"] == workspace["groups"]
+        assert version["critical"][0]["rule_group_ids"] == [performance["id"], security["id"]]
+
+        # Removing a group removes its memberships in the draft; the version stays frozen.
+        without_security = await _save(
+            auth,
+            manager,
+            workspace["revision"],
+            [
+                _in_group(first, security, performance),
+                *[_in_group(rule, performance) for rule in rest],
+            ],
+            before["normal"],
+            [performance],
+        )
+        assert without_security.status_code == 422, without_security.text
+        without_security = await _save(
+            auth,
+            manager,
+            workspace["revision"],
+            [_in_group(first, performance), *[_in_group(rule, performance) for rule in rest]],
+            before["normal"],
+            [performance],
+        )
+        assert without_security.status_code == 200, without_security.text
+        assert without_security.json()["critical"][0]["rule_group_ids"] == [performance["id"]]
+
+        # Adding the group and the membership back revives both.
+        again = await _save(
+            auth,
+            manager,
+            without_security.json()["revision"],
+            grouped,
+            before["normal"],
+            [performance, security],
+        )
+        assert again.status_code == 200, again.text
+        assert again.json()["critical"][0]["rule_group_ids"] == [performance["id"], security["id"]]
+        assert again.json()["draft_differs"] is False
+        frozen = await auth.client.get(
+            f"{auth.prefix}/rule-set/versions/{version['number']}",
+            headers=reviewer.headers,
+        )
+        assert frozen.json() == version
+
+        events = [json.loads(line) for line in rule_logs.lines]
+        created = [event for event in events if event["message"] == "rule_set.group_created"]
+        deleted = [event for event in events if event["message"] == "rule_set.group_deleted"]
+        assert {event["group_public_id"] for event in created} == {
+            performance["id"],
+            security["id"],
+        }
+        assert [event["group_public_id"] for event in deleted] == [security["id"]]
+        assert [event["group_public_id"] for event in created][-1] == security["id"]
+        assert not any("Performans" in line or "Güvenlik" in line for line in rule_logs.lines)
+    finally:
+        # The platform draft is shared: always leave it as it was, even when an assertion fails.
+        current = await _workspace(auth, manager)
+        restored = await _save(
+            auth, manager, current["revision"], before["critical"], before["normal"]
+        )
+        assert restored.status_code == 200, restored.text
+    assert restored.json()["groups"] == []
+
+
+@pytest.mark.parametrize(
+    ("groups", "membership", "code"),
+    [
+        (
+            [{"id": "g1", "name": "   ", "description": ""}],
+            None,
+            "rule_group_name_invalid",
+        ),
+        (
+            [
+                {"id": "g1", "name": "Bir", "description": ""},
+                {"id": "g2", "name": "BİR"},
+            ],
+            None,
+            "rule_group_name_duplicate",
+        ),
+        (
+            [{"id": f"g{n}", "name": f"Grup {n}"} for n in range(51)],
+            None,
+            "rule_group_too_many",
+        ),
+        ([{"id": "g1", "name": "Bir"}], ["yok"], "rule_group_unknown_membership"),
+        ([{"id": "g1", "name": "Bir"}], ["g1", "g1"], "rule_group_unknown_membership"),
+        (
+            [{"id": "g1", "name": "Bir", "description": "d" * 501}],
+            None,
+            "invalid_request",
+        ),
+    ],
+)
+async def test_invalid_group_drafts_are_rejected_without_writing(
+    auth: AuthHarness,
+    role_sessions: RoleSessions,
+    groups: list[dict[str, Any]],
+    membership: list[str] | None,
+    code: str,
+) -> None:
+    manager = await role_sessions.rule_manager()
+    before = await _workspace(auth, manager)
+    critical = [
+        {**before["critical"][0], "rule_group_ids": membership or []},
+        *before["critical"][1:],
+    ]
+
+    response = await _save(auth, manager, before["revision"], critical, before["normal"], groups)
+
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == code
+    assert await _workspace(auth, manager) == before
+
+
+async def test_summaries_are_saved_published_and_validated(
+    auth: AuthHarness, role_sessions: RoleSessions
+) -> None:
+    """rule-management Requirement 2, 12 (PRD 1.1.0): the one-sentence summary of a rule."""
+
+    manager = await role_sessions.rule_manager()
+    admin = await role_sessions.super_admin()
+    reviewer = await role_sessions.reviewer()
+    before = await _workspace(auth, manager)
+    code = before["next_rule_id"]
+    rule = {**_rule(code, f"Ayrıntılı kural {uuid4().hex}"), "summary": "  Kısa özet.  "}
+    try:
+        too_long = await _save(
+            auth, manager, before["revision"], [*before["critical"], {**rule, "summary": "x" * 201}]
+        )
+        two_lines = await _save(
+            auth, manager, before["revision"], [*before["critical"], {**rule, "summary": "a\nb"}]
+        )
+        assert too_long.status_code == two_lines.status_code == 422
+        assert too_long.json()["detail"]["code"] == "rule_summary_invalid"
+        assert two_lines.json()["detail"]["code"] == "rule_summary_invalid"
+
+        saved = await _save(
+            auth, manager, before["revision"], [*before["critical"], rule], before["normal"]
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["critical"][-1]["summary"] == "Kısa özet."
+        assert all(item["summary"] == "" for item in saved.json()["critical"][:-1])
+        published = await auth.client.post(
+            f"{auth.prefix}/rule-set/versions",
+            json={"base_revision": saved.json()["revision"]},
+            headers=admin.headers,
+        )
+        assert published.status_code == 201, published.text
+        latest = await auth.client.get(
+            f"{auth.prefix}/rule-set/versions/latest", headers=reviewer.headers
+        )
+        assert latest.json()["critical"][-1]["summary"] == "Kısa özet."
+    finally:
+        current = await _workspace(auth, manager)
+        restored = await _save(
+            auth, manager, current["revision"], before["critical"], before["normal"]
+        )
+        assert restored.status_code == 200, restored.text

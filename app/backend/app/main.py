@@ -15,6 +15,7 @@ from app.api.router import (
     router,
     stored_sql_connection_router,
 )
+from app.api.scheduled_reviews.runner import build_scheduler
 from app.core.config import Settings, get_settings
 from app.core.errors import ApplicationError, application_error_handler
 from app.core.logging import configure_logging, log_event
@@ -76,6 +77,10 @@ def _lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncContextMan
             # it retries in the background while a first installation is still migrating.
             asyncio.create_task(run_super_admin_bootstrap(async_session_factory, settings)),
         ]
+        # sql-review 008 Decision 2: the scheduler is a module of this process, off by default.
+        if settings.scheduler_enabled:
+            background.append(asyncio.create_task(build_scheduler(settings).run_forever()))
+        log_event(logger, "startup.scheduler", enabled=settings.scheduler_enabled)
         try:
             yield
         finally:

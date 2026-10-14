@@ -1,8 +1,9 @@
 """CSV and fix-comment SQL exports (sql-review 005 Requirement 7-10, Acceptance 2).
 
-The expected CSV bytes below were produced by running the previous application's own
+The ``PREVIOUS_*`` CSV bytes below were produced by running the previous application's own
 ``buildReviewResultsCsv`` (``frontend/src/components/ExportMenu.tsx``) under Node on the same
-input with the clock fixed at 2026-09-26T10:11:12.345Z.
+input with the clock fixed at 2026-09-26T10:11:12.345Z. The current file is those bytes with one
+more last column, ``rule_group`` (005 Decision 9, sql-review/PRDs/007-rule-group-selection).
 """
 
 import re
@@ -21,10 +22,11 @@ from app.services.review_export import (
 pytestmark = pytest.mark.unit
 
 GENERATED_AT = "2026-09-26T10:11:12.345Z"
-HEADER = (
+PREVIOUS_HEADER = (
     "﻿generated_at,database,schema,name,object_type,rule_id,tier,status,severity,"
     "description,line_reference,code_snippet,false_positive"
 )
+HEADER = PREVIOUS_HEADER + ",rule_group"
 WARNING = "[Kural04] LLM sunucusu hata döndürdü (HTTP 500)."
 
 
@@ -96,8 +98,8 @@ OBJECT_RUN = [
     ),
 ]
 
-EXPECTED_OBJECT_CSV = (
-    HEADER + "\r\n"
+PREVIOUS_OBJECT_CSV = (
+    PREVIOUS_HEADER + "\r\n"
     '2026-09-26T10:11:12.345Z,DWH,dbo,usp_A,PROCEDURE,Kural01,,FAIL,HIGH,"[Kural04] LLM '
     'sunucusu hata döndürdü (HTTP 500). — usp_A: ilk neden, ""alıntı""",Satır 3,"SELECT *\r\n'
     'FROM t",false\r\n'
@@ -113,6 +115,30 @@ EXPECTED_OBJECT_CSV = (
     "2026-09-26T10:11:12.345Z,DWH2,sales,vw_B,VIEW,,,,,Tanım alınamadı (nesne yok veya yetki "
     "yok).,,,false"
 )
+
+
+def _with_rule_group(previous: str, groups: list[str] | None = None) -> str:
+    """The previous builder's bytes with the rule_group column appended to every record.
+
+    Records end at a CRLF outside quotes; ``groups`` gives each data row's value (default empty).
+    """
+
+    values = iter(groups or [])
+    out: list[str] = []
+    quoted = False
+    first = True
+    for index, char in enumerate(previous):
+        if char == '"':
+            quoted = not quoted
+        if not quoted and previous.startswith("\r\n", index):
+            out.append(",rule_group" if first else "," + next(values, ""))
+            first = False
+        out.append(char)
+    out.append(",rule_group" if first else "," + next(values, ""))
+    return "".join(out)
+
+
+EXPECTED_OBJECT_CSV = _with_rule_group(PREVIOUS_OBJECT_CSV)
 
 
 def test_csv_bytes_equal_the_previous_builder_for_an_object_run() -> None:
@@ -138,7 +164,7 @@ def test_csv_bytes_equal_the_previous_builder_for_a_script_run() -> None:
     ]
     assert build_results_csv(script, generated_at=GENERATED_AT) == (
         HEADER + "\r\n2026-09-26T10:11:12.345Z,,sql,Etiketim,SCRIPT,Kural01,critical,"
-        "NOT_APPLICABLE,,kapsam dışı,,,false"
+        "NOT_APPLICABLE,,kapsam dışı,,,false,"
     )
 
 
@@ -147,7 +173,7 @@ def test_csv_of_a_run_without_results_is_one_error_row() -> None:
         [], generated_at=GENERATED_AT, database="DWH", review_error="İnceleme tamamlanamadı."
     )
     assert csv == (
-        HEADER + "\r\n2026-09-26T10:11:12.345Z,DWH,,,,,,,,İnceleme tamamlanamadı.,,,false"
+        HEADER + "\r\n2026-09-26T10:11:12.345Z,DWH,,,,,,,,İnceleme tamamlanamadı.,,,false,"
     )
     assert build_results_csv([], generated_at=GENERATED_AT) == HEADER
 
@@ -331,3 +357,101 @@ def test_every_number_of_a_range_or_list_is_moved_once() -> None:
         "Satır 13–15, 18 ve Satir 19"
     )
     assert shift_line_reference("line 3", lambda n: n + 10) == "line 3"
+
+
+# --- Rule groups (005 Decision 9, sql-review/PRDs/007-rule-group-selection Requirement 7) ------
+
+
+def test_the_rule_group_is_the_last_csv_column_of_result_and_finding_rows() -> None:
+    item = ExportObject(
+        database="DWH",
+        schema="dbo",
+        name="usp_A",
+        object_type="PROCEDURE",
+        error="",
+        parse_warning="",
+        rule_results=[
+            ExportRuleResult(
+                "Kural01",
+                "critical",
+                "FAIL",
+                "HIGH",
+                "d",
+                "",
+                "",
+                False,
+                rule_groups=("Güvenlik", "Performans"),
+            ),
+            ExportRuleResult("Kural02", "normal", "PASS", "", "uyumlu", "", "", False),
+        ],
+        findings=[
+            ExportFinding(
+                "Kural01", "HIGH", "neden", "Satır 3", "x", False, rule_groups=("Güvenlik",)
+            )
+        ],
+    )
+
+    rows = build_results_csv([item], generated_at=GENERATED_AT).split("\r\n")
+
+    assert rows[0] == HEADER
+    assert rows[1].endswith(",false,Güvenlik")
+    assert rows[2].endswith(",false,")
+
+
+def test_several_groups_of_a_rule_are_joined_with_a_semicolon_in_the_csv() -> None:
+    item = ExportObject(
+        database="DWH",
+        schema="dbo",
+        name="usp_A",
+        object_type="PROCEDURE",
+        error="",
+        parse_warning="",
+        rule_results=[
+            ExportRuleResult(
+                "Kural01",
+                "critical",
+                "PASS",
+                "",
+                "uyumlu",
+                "",
+                "",
+                False,
+                rule_groups=("Güvenlik", "Performans"),
+            )
+        ],
+        findings=[],
+    )
+
+    rows = build_results_csv([item], generated_at=GENERATED_AT).split("\r\n")
+
+    assert rows[1].endswith(",false,Güvenlik; Performans")
+
+
+def test_the_sql_comment_names_the_rule_group_next_to_the_rule() -> None:
+    grouped = _sql_object(
+        "DWH",
+        "dbo",
+        "usp_A",
+        DEFINITION_A,
+        [
+            ExportFinding(
+                "Kural01",
+                "HIGH",
+                "neden",
+                "Satır 2",
+                "",
+                False,
+                rule_groups=("Güvenlik", "Performans"),
+            )
+        ],
+    )
+    ungrouped = _sql_object(
+        "DWH", "sales", "vw_B", DEFINITION_B, [_finding("Kural02", "başka", "Satır 1")]
+    )
+
+    content = build_sql_export([grouped, ungrouped], script=False)
+
+    assert content is not None
+    lines = content.split("\n")
+    assert any(line.startswith("- Kural01 (Güvenlik, Performans) — ") for line in lines)
+    assert any(line.startswith("- Kural02 — ") for line in lines)

@@ -213,7 +213,8 @@ class RecordingHandler(logging.Handler):
 @pytest.fixture
 def recorded_logs() -> Iterator[RecordingHandler]:
     handler = RecordingHandler()
-    loggers = [logging.getLogger(name) for name in ("app.auth", "app.admin", "app.http")]
+    names = ("app.auth", "app.admin", "app.http", "app.scheduled_review")
+    loggers = [logging.getLogger(name) for name in names]
     levels = [logger.level for logger in loggers]
     for logger in loggers:
         logger.addHandler(handler)
@@ -238,6 +239,7 @@ class RoleSession:
 class RoleSessions:
     def __init__(self, auth: AuthHarness) -> None:
         self.auth = auth
+        self._super_admin: RoleSession | None = None
 
     async def login(self, role: str) -> RoleSession:
         name = f"kisi{uuid4().hex[:8]}"
@@ -260,7 +262,9 @@ class RoleSessions:
         body = response.json()
         assert body["user"]["role"] == role
         return RoleSession(
-            self.auth.auth_headers(body), body["user"]["public_id"], body["user"]["display_name"]
+            self.auth.auth_headers(body),
+            body["user"]["public_id"],
+            body["user"]["display_name"],
         )
 
     async def reviewer(self) -> RoleSession:
@@ -268,6 +272,29 @@ class RoleSessions:
 
     async def rule_manager(self) -> RoleSession:
         return await self.login("kural-yoneticisi")
+
+    async def super_admin(self) -> RoleSession:
+        """A local super admin; only it publishes directly (sql-review 009-rule-proposals)."""
+
+        if self._super_admin is None:
+            username = f"admin-{uuid4().hex[:10]}"
+            password = secrets.token_urlsafe(24)
+            async with async_session_factory() as session:
+                await ensure_super_admin(
+                    session,
+                    email=f"{username}@example.test",
+                    username=username,
+                    password=password,
+                )
+            response = await self.auth.login(username, password)
+            assert response.status_code == 200, response.text
+            body = response.json()
+            self._super_admin = RoleSession(
+                self.auth.auth_headers(body),
+                body["user"]["public_id"],
+                body["user"]["display_name"],
+            )
+        return self._super_admin
 
 
 @pytest.fixture
@@ -309,8 +336,15 @@ class ReviewEnv:
         manager: RoleSession,
         critical: list[tuple[str, bool]],
         normal: list[tuple[str, bool]] | None = None,
+        *,
+        groups: list[dict[str, str]] | None = None,
+        membership: dict[int, str | list[str]] | None = None,
     ) -> tuple[int, list[str]]:
-        """Publish a fresh rule set with new codes; returns the version number and codes."""
+        """Publish a fresh rule set with new codes; returns the version number and codes.
+
+        ``membership`` maps the zero-based index of a rule (critical first, then normal) to the
+        id, or the list of ids, of its ``groups`` (rule-group-selection Decision 1).
+        """
 
         client = self.auth.client
         workspace = (await client.get(f"{self.prefix}/rule-set", headers=manager.headers)).json()
@@ -322,37 +356,73 @@ class ReviewEnv:
             for text_value, flag in rules:
                 code = f"Kural{number + len(codes):02d}"
                 codes.append(code)
-                built.append({"id": code, "text": text_value, "requires_metadata": flag})
+                group = (membership or {}).get(len(codes) - 1)
+                built.append(
+                    {
+                        "id": code,
+                        "text": text_value,
+                        "requires_metadata": flag,
+                        "rule_group_ids": (
+                            [] if group is None else [group] if isinstance(group, str) else group
+                        ),
+                    }
+                )
             return built
 
         body = {
             "base_revision": workspace["revision"],
             "critical": items(critical),
             "normal": items(normal or []),
+            "groups": groups or [],
         }
         saved = await client.put(
             f"{self.prefix}/rule-set/draft", json=body, headers=manager.headers
         )
         assert saved.status_code == 200, saved.text
+        # Only the super admin publishes directly (009-rule-proposals); in the caller's tenant.
+        tenant_header = self.auth.settings.tenant_header
+        admin = await self.sessions.super_admin()
         published = await client.post(
             f"{self.prefix}/rule-set/versions",
             json={"base_revision": saved.json()["revision"]},
-            headers=manager.headers,
+            headers={**admin.headers, tenant_header: manager.headers[tenant_header]},
         )
         assert published.status_code in (200, 201), published.text
         return int(published.json()["number"]), codes
 
-    async def object_review(self, session: RoleSession, selections: list[dict[str, str]]) -> Any:
+    async def object_review(
+        self,
+        session: RoleSession,
+        selections: list[dict[str, str]],
+        rule_group_ids: list[str] | None = None,
+        rule_codes: list[str] | None = None,
+    ) -> Any:
         return await self.auth.client.post(
             f"{self.prefix}/object-reviews",
-            json={"selections": selections},
+            json={
+                "selections": selections,
+                "rule_group_ids": rule_group_ids or [],
+                "rule_codes": rule_codes or [],
+            },
             headers=session.headers,
         )
 
-    async def script_review(self, session: RoleSession, sql: str, label: str | None = None) -> Any:
+    async def script_review(
+        self,
+        session: RoleSession,
+        sql: str,
+        label: str | None = None,
+        rule_group_ids: list[str] | None = None,
+        rule_codes: list[str] | None = None,
+    ) -> Any:
         return await self.auth.client.post(
             f"{self.prefix}/script-reviews",
-            json={"sql": sql, "label": label},
+            json={
+                "sql": sql,
+                "label": label,
+                "rule_group_ids": rule_group_ids or [],
+                "rule_codes": rule_codes or [],
+            },
             headers=session.headers,
         )
 

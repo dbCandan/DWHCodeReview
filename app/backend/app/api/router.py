@@ -10,7 +10,12 @@ from app.api.llm.router import router as llm_router
 from app.api.review_runs.router import router as review_runs_router
 from app.api.reviews.router import catalog_router as review_catalog_router
 from app.api.reviews.router import router as reviews_router
+from app.api.rule_proposals.router import proposals_router as rule_proposals_router
+from app.api.rule_proposals.router import proposers_router as rule_proposers_router
+from app.api.rule_proposals.router import requests_router as publish_requests_router
 from app.api.rule_set.router import router as rule_set_router
+from app.api.scheduled_reviews.router import router as scheduled_reviews_router
+from app.api.scheduled_reviews.router import settings_router as schedule_settings_router
 from app.api.sql_connection.router import local_router as sql_connection_local_router
 from app.api.sql_connection.router import router as sql_connection_router
 from app.api.sql_connection.router import stored_router as sql_connection_stored_router
@@ -23,11 +28,16 @@ router.include_router(health_router)
 router.include_router(auth_router)
 router.include_router(admin_router)
 router.include_router(rule_set_router)
+router.include_router(publish_requests_router)
+router.include_router(rule_proposals_router)
+router.include_router(rule_proposers_router)
 router.include_router(sql_connection_router)
 router.include_router(llm_router)
 router.include_router(review_catalog_router)
 router.include_router(reviews_router)
 router.include_router(review_runs_router)
+router.include_router(scheduled_reviews_router)
+router.include_router(schedule_settings_router)
 # kt-scaffold:router-registration
 
 

@@ -1,7 +1,8 @@
 """Start-up refusal of unsafe integration settings and environment-dependent routes.
 
 sql-review/PRDs/002-sql-server-connection Requirement 1 and 5 (Decision 5, 6, 10, 11) and
-006-llm-connection Requirement 1, 2 and 13 (Acceptance 1).
+006-llm-connection Requirement 1, 2 and 13 (Acceptance 1); the SMTP relay and recipient
+domains of 008-scheduled-review-email.
 """
 
 import base64
@@ -152,6 +153,14 @@ def test_unsafe_nonprod_settings_stop_start_up(change: dict[str, Any], setting: 
         ({"llm_chat_url": "https://llm.local/v1#x"}, "DWHCODEREVIEW_LLM_CHAT_URL"),
         ({"llm_base_url": "ftp://llm.local/v1"}, "DWHCODEREVIEW_LLM_BASE_URL"),
         ({"llm_ca_bundle": "/nonexistent/ca.pem"}, "DWHCODEREVIEW_LLM_CA_BUNDLE"),
+        ({"smtp_host": "smtp://relay.corp.example.test"}, "DWHCODEREVIEW_SMTP_HOST"),
+        ({"smtp_host": "relay.corp.example.test:587"}, "DWHCODEREVIEW_SMTP_HOST"),
+        ({"smtp_sender": "ReviewX <reviewx@corp.example.test>"}, "DWHCODEREVIEW_SMTP_SENDER"),
+        ({"smtp_ca_bundle": "/nonexistent/ca.pem"}, "DWHCODEREVIEW_SMTP_CA_BUNDLE"),
+        (
+            {"mail_allowed_domains": "corp.example.test, @dis.com"},
+            "DWHCODEREVIEW_MAIL_ALLOWED_DOMAINS",
+        ),
     ],
 )
 def test_malformed_values_stop_start_up_in_every_environment(
@@ -255,3 +264,22 @@ async def test_a_stored_nonprod_asks_for_a_session_before_it_saves_or_tests() ->
             assert response.status_code == 401, path
         llm = await client.put(f"{settings.api_prefix}/llm-connection", json={}, headers=headers)
         assert llm.status_code == 404
+
+
+def test_a_well_formed_smtp_relay_starts_and_counts_as_configured() -> None:
+    relay = {
+        "smtp_host": "relay.corp.example.test",
+        "smtp_sender": "reviewx@corp.example.test",
+        "mail_allowed_domains": " Corp.Example.Test ,corp.example.test,diger.example.test",
+    }
+    settings = _settings(**{**NONPROD_OK, **relay})
+    assert integration_setting_errors(settings) == []
+    assert settings.smtp_configured
+    assert settings.mail_allowed_domain_list == ("corp.example.test", "diger.example.test")
+
+
+def test_without_host_or_sender_the_e_mail_is_not_configured_and_start_up_continues() -> None:
+    settings = _settings(**{**NONPROD_OK, "smtp_host": "relay.corp.example.test"})
+    assert integration_setting_errors(settings) == []
+    assert not settings.smtp_configured
+    assert not _settings(**NONPROD_OK).scheduler_enabled

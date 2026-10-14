@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, StrictBool
 
 from app.schemas.reviews.contracts import ObjectResultItem, ReviewKindValue
+from app.schemas.reviews.events import SelectedRuleGroup
 
 ReviewRunStatusValue = Literal["running", "completed", "failed", "cancelled", "interrupted"]
 ReviewRunScopeValue = Literal["mine", "all"]
@@ -45,6 +46,17 @@ class ReviewRunDetail(ReviewRunSummary):
     )
     results_page: int = Field(description="The returned page of objects, starting at 1.")
     results_page_size: int = Field(description="Objects per page of this response.")
+    selected_rule_groups: list[SelectedRuleGroup] = Field(
+        default_factory=list,
+        description="Named rule groups the run used, in version order; empty with all_rules.",
+    )
+    selected_rule_codes: list[str] = Field(
+        default_factory=list,
+        description="Single rules the run was started with besides the groups.",
+    )
+    all_rules: bool = Field(
+        default=True, description="True when neither a group nor a rule was selected."
+    )
 
 
 class FalsePositiveUpdate(BaseModel):

@@ -10,11 +10,18 @@ from app.domain.models.review import (
     ReviewRunObject,
 )
 from app.domain.models.role import Role, UserRole
+from app.domain.models.rule_proposal import RuleProposal, RulePublishRequest
 from app.domain.models.rule_set import (
     RuleSetDraft,
     RuleSetDraftRule,
     RuleSetVersion,
     RuleSetVersionRule,
+)
+from app.domain.models.scheduled_review import (
+    ReviewRunRecipient,
+    ScheduledReview,
+    ScheduledReviewRun,
+    ScheduledReviewSetting,
 )
 from app.domain.models.sql_connection import SqlConnectionSetting
 from app.domain.models.tenant import Tenant
@@ -31,12 +38,18 @@ __all__ = [
     "ReviewRuleResult",
     "ReviewRun",
     "ReviewRunObject",
+    "ReviewRunRecipient",
     "Role",
     "RolePermission",
+    "RuleProposal",
+    "RulePublishRequest",
     "RuleSetDraft",
     "RuleSetDraftRule",
     "RuleSetVersion",
     "RuleSetVersionRule",
+    "ScheduledReview",
+    "ScheduledReviewRun",
+    "ScheduledReviewSetting",
     "SqlConnectionSetting",
     "Tenant",
     "User",

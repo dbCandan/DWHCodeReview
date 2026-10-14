@@ -5,7 +5,7 @@
 # Contract: specs/application-foundation/PRDs/002-kubernetes-delivery/PRD.md (Requirement 5, 8, 10).
 backend:
   # Prepared by deploy-hooks.sh: session signing key, settings encryption key, the optional SQL
-  # Server and LLM credentials and the optional super admin start-up password.
+  # Server, LLM and SMTP credentials and the optional super admin start-up password.
   existingSecret: dwhcodereview-runtime
   config:
     # staging is the nonprod environment of application-foundation/DOMAIN.md.
@@ -31,6 +31,18 @@ backend:
     DWHCODEREVIEW_LLM_BASE_URL: https://runai.gpudtx.kuveytturk.com.tr/inference/qwen36-35b-a3b-fp8/v1
     DWHCODEREVIEW_LLM_MODEL: /data/models--Qwen--Qwen36-35B-A3B-FP8
     DWHCODEREVIEW_OTEL_EXPORTER_OTLP_ENDPOINT: ""
+    # Scheduled reviews (sql-review/PRDs/008-scheduled-review-email): the scheduler is a module of
+    # the backend process (Decision 2), so the chart gains no workload. Recipients may use only
+    # these corporate domains (Decision 5). Until the operations team names the SMTP relay,
+    # reports are stored and the e-mail is recorded as not configured; then set its host, port
+    # and sender here, add its address to the egress list below and pass SMTP_USER and
+    # SMTP_PASSWORD to deploy-hooks.sh when the relay needs a login.
+    DWHCODEREVIEW_SCHEDULER_ENABLED: true
+    DWHCODEREVIEW_MAIL_ALLOWED_DOMAINS: kuveytturk.com.tr
+    DWHCODEREVIEW_SMTP_HOST: ""
+    DWHCODEREVIEW_SMTP_PORT: 587
+    DWHCODEREVIEW_SMTP_SECURITY: starttls
+    DWHCODEREVIEW_SMTP_SENDER: ""
     # No SQL Server address or account here: the super admin enters the
     # connection in the application, which keeps it in PostgreSQL with the password encrypted
     # (sql-review/PRDs/002-sql-server-connection Requirement 5 and 10). Until then the SQL Server
@@ -57,6 +69,10 @@ backend:
       # SQL Server; its single address is not known yet, so the widest block rules/45 admits.
       - to: [{ipBlock: {cidr: 10.0.0.0/8}}]
         ports: [{protocol: TCP, port: 1433}]
+      # SMTP relay of the scheduled review e-mail; enable with the relay's single address once
+      # the operations team names it:
+      # - to: [{ipBlock: {cidr: <relay address>/32}}]
+      #   ports: [{protocol: TCP, port: 587}]
 frontend:
   ingress:
     className: nginx

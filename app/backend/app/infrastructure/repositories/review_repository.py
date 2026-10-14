@@ -11,7 +11,7 @@ chunk by chunk: results are read by object position range and joined to their ru
 a list of identifiers, which a single PostgreSQL statement limits to 32,767 parameters.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -25,11 +25,14 @@ from app.domain.models.review import (
     ReviewRuleResult,
     ReviewRun,
     ReviewRunObject,
+    ReviewRunRule,
+    ReviewRunRuleGroup,
     ReviewRunStatus,
 )
 from app.domain.models.rule_set import RuleSetVersion
 from app.domain.models.user import User
 from app.domain.review import ObjectOutcome
+from app.domain.rule_set import RuleGroup
 
 # Objects whose outcomes are written, flushed and released together when a run completes.
 _STORE_CHUNK_OBJECTS = 100
@@ -122,7 +125,17 @@ class ReviewRepository:
         rule_set_version_id: int,
         started_at: datetime,
         objects: Sequence[NewRunObject],
+        selected_groups: Sequence[tuple[int, RuleGroup]] = (),
+        selected_rule_codes: Sequence[str] = (),
+        scheduled_review_id: int | None = None,
     ) -> ReviewRun:
+        """Insert the running run, its objects and its rule selection (empty = every rule).
+
+        ``selected_groups`` pairs each selected group with its position in the pinned version;
+        ``selected_rule_codes`` are the single rules in version order
+        (sql-review/PRDs/007-rule-group-selection Requirement 5).
+        """
+
         run = ReviewRun(
             public_id=new_public_id(),
             tenant_id=tenant_id,
@@ -133,6 +146,7 @@ class ReviewRepository:
             object_count=len(objects),
             status=ReviewRunStatus.RUNNING.value,
             started_at=started_at,
+            scheduled_review_id=scheduled_review_id,
             created_by=owner_user_id,
             updated_by=owner_user_id,
         )
@@ -152,6 +166,27 @@ class ReviewRepository:
             )
             for position, item in enumerate(objects)
         )
+        self.session.add_all(
+            ReviewRunRuleGroup(
+                review_run_id=run.review_run_id,
+                rule_group_public_id=group.public_id,
+                name=group.name,
+                position=position,
+                created_by=owner_user_id,
+                updated_by=owner_user_id,
+            )
+            for position, group in selected_groups
+        )
+        self.session.add_all(
+            ReviewRunRule(
+                review_run_id=run.review_run_id,
+                rule_code=code,
+                position=position,
+                created_by=owner_user_id,
+                updated_by=owner_user_id,
+            )
+            for position, code in enumerate(selected_rule_codes)
+        )
         await self.session.flush()
         return run
 
@@ -163,6 +198,7 @@ class ReviewRepository:
         finished_at: datetime,
         outcomes: Sequence[ObjectOutcome],
         collect_identifiers: bool = True,
+        rule_group_names: Mapping[str, Sequence[str]] | None = None,
     ) -> list[StoredResult] | None:
         """Write every outcome and mark the run completed; None when it no longer runs.
 
@@ -179,7 +215,9 @@ class ReviewRepository:
         stored: list[StoredResult] = []
         for start in range(0, len(outcomes), _STORE_CHUNK_OBJECTS):
             chunk = outcomes[start : start + _STORE_CHUNK_OBJECTS]
-            identifiers = await self._store_outcomes(run_id, owner_user_id, chunk)
+            identifiers = await self._store_outcomes(
+                run_id, owner_user_id, chunk, rule_group_names or {}
+            )
             if collect_identifiers:
                 stored.extend(identifiers)
         run.status = ReviewRunStatus.COMPLETED.value
@@ -189,7 +227,11 @@ class ReviewRepository:
         return stored
 
     async def _store_outcomes(
-        self, run_id: int, owner_user_id: int, outcomes: Sequence[ObjectOutcome]
+        self,
+        run_id: int,
+        owner_user_id: int,
+        outcomes: Sequence[ObjectOutcome],
+        rule_group_names: Mapping[str, Sequence[str]],
     ) -> list[StoredResult]:
         objects = {
             item.position: item
@@ -218,6 +260,7 @@ class ReviewRepository:
                     position=position,
                     rule_code=check.rule_code,
                     priority_group=check.tier.value,
+                    rule_group_names=list(rule_group_names.get(check.rule_code, ())),
                     status=check.status.value,
                     severity=None if check.severity is None else check.severity.value,
                     decision_basis=check.decision_basis or None,
@@ -337,6 +380,29 @@ class ReviewRepository:
             .limit(limit)
         )
         return [RunRow(*row) for row in rows.all()], int(total or 0)
+
+    async def selected_groups_of_run(self, run_id: int) -> list[RuleGroup]:
+        """The named groups a run was started with, in version order (rule-group-selection)."""
+
+        rows = await self.session.scalars(
+            select(ReviewRunRuleGroup)
+            .where(
+                ReviewRunRuleGroup.review_run_id == run_id,
+                ReviewRunRuleGroup.is_deleted.is_(False),
+            )
+            .order_by(ReviewRunRuleGroup.position)
+        )
+        return [RuleGroup(row.rule_group_public_id, row.name) for row in rows]
+
+    async def selected_rule_codes_of_run(self, run_id: int) -> list[str]:
+        """The single rules a run was started with, in version order (rule-group-selection)."""
+
+        rows = await self.session.scalars(
+            select(ReviewRunRule.rule_code)
+            .where(ReviewRunRule.review_run_id == run_id, ReviewRunRule.is_deleted.is_(False))
+            .order_by(ReviewRunRule.position)
+        )
+        return list(rows)
 
     async def get_run(self, tenant_id: int, public_id: str) -> RunRow | None:
         row = (

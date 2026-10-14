@@ -50,7 +50,7 @@ describe('live review progress', () => {
     };
     const progress = replay(
       [
-        {phase: 'run_started', run_id: 'run-1', rule_version: 2, objects_total: 2, kind: 'object'},
+        {phase: 'run_started', run_id: 'run-1', rule_version: 2, objects_total: 2, kind: 'object', all_rules: true},
         ...objectRunEvents().slice(1, 5),
         {...second, phase: 'object_start'},
         {...second, phase: 'object_error', code: 'object_not_found', message: 'Tanım alınamadı (nesne yok veya yetki yok).'},
@@ -74,6 +74,7 @@ describe('live review progress', () => {
       rule_version: 2,
       objects_total: total,
       kind: 'object',
+      all_rules: true,
     });
     const fields = (index: number) => ({
       kind: 'object' as const,

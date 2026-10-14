@@ -2,7 +2,8 @@
 
 Specs: application-foundation/PRDs/001-directory-login "Veri ve geçiş" and the data sections of
 sql-review/PRDs/001-rule-management, 002-sql-server-connection, 003-object-review,
-004-script-review, 005-review-history-export and 006-llm-connection; rules 41 (mandatory block),
+004-script-review, 005-review-history-export, 006-llm-connection, 007-rule-group-selection and
+008-scheduled-review-email; rules 41 (mandatory block),
 42 (references) and 43 (comments) are checked on the migrated database, not on source text.
 """
 
@@ -34,7 +35,33 @@ WAVE_ONE_TABLES = {
 }
 # sql-review 002-sql-server-connection "Veri ve geçiş": the connection the super admin saves.
 SQL_CONNECTION_TABLES = {"sql_connection_setting"}
-CHECKED_TABLES = WAVE_ONE_TABLES | SQL_CONNECTION_TABLES
+# sql-review 007-rule-group-selection "Veri ve geçiş": named groups, the rules' memberships and
+# a run's group and rule selection.
+RULE_GROUP_TABLES = {
+    "rule_set_draft_group",
+    "rule_set_version_group",
+    "rule_set_draft_rule_group",
+    "rule_set_version_rule_group",
+    "review_run_rule_group",
+    "review_run_rule",
+}
+# sql-review 008-scheduled-review-email "Veri ve geçiş": definitions, their runs, run
+# recipients and the per-tenant setting.
+SCHEDULED_REVIEW_TABLES = {
+    "scheduled_review",
+    "scheduled_review_run",
+    "review_run_recipient",
+    "scheduled_review_setting",
+}
+# sql-review 009-rule-proposals "Veri ve geçiş": proposals, publish requests and the permission.
+RULE_PROPOSAL_TABLES = {"rule_proposal", "rule_publish_request", "rule_proposer"}
+CHECKED_TABLES = (
+    WAVE_ONE_TABLES
+    | SQL_CONNECTION_TABLES
+    | RULE_GROUP_TABLES
+    | SCHEDULED_REVIEW_TABLES
+    | RULE_PROPOSAL_TABLES
+)
 ALL_DOMAIN_TABLES = CHECKED_TABLES | {
     "app_permission",
     "app_role",
@@ -58,7 +85,12 @@ PUBLIC_ID_TABLES = {
     "review_finding",
     "review_rule_result",
     "review_run",
+    "rule_proposal",
+    "rule_publish_request",
+    "rule_set_draft_group",
     "rule_set_version",
+    "scheduled_review",
+    "scheduled_review_run",
 }
 # Columns whose meaning is a closed value set, a cross-table reference or a lifecycle contract:
 # rule 43 requires a database comment on each.
@@ -92,9 +124,56 @@ COMMENTED_COLUMNS = {
     ("rule_set_version", "source"),
     ("rule_set_version", "number"),
     ("rule_set_version_rule", "priority_group"),
+    ("review_rule_result", "rule_group_names"),
+    ("rule_proposal", "kind"),
+    ("rule_proposal", "status"),
+    ("rule_proposal", "proposer_user_id"),
+    ("rule_proposal", "decided_by_user_id"),
+    ("rule_proposal", "rule_group_ids"),
+    ("rule_proposal", "rule_codes"),
+    ("rule_publish_request", "status"),
+    ("rule_publish_request", "requester_user_id"),
+    ("rule_publish_request", "draft_revision"),
+    ("rule_proposer", "user_id"),
+    ("rule_proposer", "granted_by_user_id"),
+    ("rule_set_draft_rule", "summary"),
+    ("rule_set_version_rule", "summary"),
+    ("review_run_rule", "review_run_id"),
+    ("review_run_rule", "rule_code"),
+    ("review_run_rule_group", "review_run_id"),
+    ("review_run_rule_group", "rule_group_public_id"),
+    ("rule_set_draft_group", "rule_set_draft_id"),
+    ("rule_set_draft_group", "position"),
+    ("rule_set_draft_rule_group", "rule_set_draft_id"),
+    ("rule_set_draft_rule_group", "rule_set_draft_group_id"),
+    ("rule_set_version_group", "rule_set_version_id"),
+    ("rule_set_version_group", "rule_group_public_id"),
+    ("rule_set_version_rule_group", "rule_set_version_id"),
+    ("rule_set_version_rule_group", "rule_group_public_id"),
     ("sql_connection_setting", "tenant_id"),
     ("sql_connection_setting", "password_ciphertext"),
     ("sql_connection_setting", "trust_server_certificate"),
+    ("review_run", "scheduled_review_id"),
+    ("review_run_recipient", "review_run_id"),
+    ("review_run_recipient", "email"),
+    ("scheduled_review", "tenant_id"),
+    ("scheduled_review", "owner_user_id"),
+    ("scheduled_review", "selection_mode"),
+    ("scheduled_review", "selection"),
+    ("scheduled_review", "rule_group_ids"),
+    ("scheduled_review", "frequency"),
+    ("scheduled_review", "timezone"),
+    ("scheduled_review", "recipients"),
+    ("scheduled_review", "status"),
+    ("scheduled_review_run", "scheduled_review_id"),
+    ("scheduled_review_run", "review_run_id"),
+    ("scheduled_review_run", "trigger"),
+    ("scheduled_review_run", "triggered_by_user_id"),
+    ("scheduled_review_run", "state"),
+    ("scheduled_review_run", "skip_reason"),
+    ("scheduled_review_run", "email_status"),
+    ("scheduled_review_setting", "tenant_id"),
+    ("scheduled_review_setting", "max_concurrent_runs"),
 }
 
 
@@ -523,3 +602,378 @@ async def test_a_saved_sql_connection_is_one_row_per_tenant(
             await savepoint.rollback()
         finally:
             await transaction.rollback()
+
+
+async def _insert_version(connection: AsyncConnection, tenant_id: int, number: int) -> int:
+    return int(
+        await _scalar(
+            connection,
+            "INSERT INTO rule_set_version (public_id, tenant_id, number, published_at, source, "
+            "content_sha256) VALUES (:public_id, :tenant, :number, now(), 'ice-aktarim', "
+            "repeat('a', 64)) RETURNING rule_set_version_id",
+            public_id=str(uuid4()),
+            tenant=tenant_id,
+            number=number,
+        )
+    )
+
+
+async def test_a_version_membership_points_only_at_a_rule_and_group_of_its_version(
+    migrated_database: None,
+) -> None:
+    """rule-group-selection Decision 1: a rule may join several groups, inside the same version."""
+
+    async with engine.connect() as connection:
+        tenant_id = await _tenant_id(connection)
+        version_id = await _insert_version(connection, tenant_id, 900_001)
+        other_id = await _insert_version(connection, tenant_id, 900_002)
+        for version in (version_id, other_id):
+            await connection.execute(
+                text(
+                    "INSERT INTO rule_set_version_rule (rule_set_version_id, rule_code, "
+                    "priority_group, position, rule_text) VALUES (:version, 'Kural01', "
+                    "'critical', 0, 'metin')"
+                ),
+                {"version": version},
+            )
+        for position, group in enumerate(("grp-a", "grp-b")):
+            await connection.execute(
+                text(
+                    "INSERT INTO rule_set_version_group (rule_set_version_id, "
+                    "rule_group_public_id, name, description, position) VALUES (:version, "
+                    ":group, :name, '', :position)"
+                ),
+                {"version": version_id, "group": group, "name": group, "position": position},
+            )
+        membership = (
+            "INSERT INTO rule_set_version_rule_group (rule_set_version_id, rule_code, "
+            "rule_group_public_id) VALUES (:version, 'Kural01', :group)"
+        )
+        for group in ("grp-a", "grp-b"):
+            await connection.execute(text(membership), {"version": version_id, "group": group})
+        with pytest.raises(IntegrityError):
+            await connection.execute(text(membership), {"version": other_id, "group": "grp-a"})
+        await connection.rollback()
+
+
+async def test_a_draft_membership_points_only_at_a_group_of_its_own_draft(
+    migrated_database: None,
+) -> None:
+    async with engine.connect() as connection:
+        tenant_id = await _tenant_id(connection)
+        other_tenant = int(
+            await _scalar(
+                connection,
+                "INSERT INTO tenant (public_id, code, name) VALUES (:public_id, :code, 'Diğer') "
+                "RETURNING tenant_id",
+                public_id=str(uuid4()),
+                code=f"t{uuid4().hex[:12]}",
+            )
+        )
+        drafts = []
+        for tenant in (tenant_id, other_tenant):
+            drafts.append(
+                int(
+                    await _scalar(
+                        connection,
+                        "INSERT INTO rule_set_draft (tenant_id) VALUES (:tenant) "
+                        "ON CONFLICT (tenant_id) DO UPDATE SET revision = rule_set_draft.revision "
+                        "RETURNING rule_set_draft_id",
+                        tenant=tenant,
+                    )
+                )
+            )
+        # The platform draft is shared by the tests: a code no other test uses.
+        code = f"Kural{uuid4().int % 900_000 + 100_000}"
+        await connection.execute(
+            text(
+                "INSERT INTO rule_set_draft_rule (rule_set_draft_id, rule_code, priority_group, "
+                "position, rule_text) VALUES (:draft, :code, 'critical', 0, 'metin')"
+            ),
+            {"draft": drafts[0], "code": code},
+        )
+        foreign_group = int(
+            await _scalar(
+                connection,
+                "INSERT INTO rule_set_draft_group (public_id, rule_set_draft_id, name, "
+                "description, position) VALUES (:public_id, :draft, 'Güvenlik', '', 0) "
+                "RETURNING rule_set_draft_group_id",
+                public_id=str(uuid4()),
+                draft=drafts[1],
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await connection.execute(
+                text(
+                    "INSERT INTO rule_set_draft_rule_group (rule_set_draft_id, rule_code, "
+                    "rule_set_draft_group_id) VALUES (:draft, :code, :group)"
+                ),
+                {"draft": drafts[0], "code": code, "group": foreign_group},
+            )
+        await connection.rollback()
+
+
+async def test_deleting_a_run_removes_its_selected_groups_and_rules(
+    migrated_database: None,
+) -> None:
+    async with engine.begin() as connection:
+        tenant_id = await _tenant_id(connection)
+        owner = await _insert_directory_user(connection, tenant_id)
+        version_id = await _insert_version(connection, tenant_id, 900_003)
+        run_id = int(
+            await _scalar(
+                connection,
+                "INSERT INTO review_run (public_id, tenant_id, owner_user_id, kind, "
+                "rule_set_version_id, object_count, started_at) VALUES (:public_id, :tenant, "
+                ":owner, 'object', :version, 1, now()) RETURNING review_run_id",
+                public_id=str(uuid4()),
+                tenant=tenant_id,
+                owner=owner,
+                version=version_id,
+            )
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO review_run_rule_group (review_run_id, rule_group_public_id, name, "
+                "position) VALUES (:run, 'grp-a', 'Performans', 0)"
+            ),
+            {"run": run_id},
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO review_run_rule (review_run_id, rule_code, position) "
+                "VALUES (:run, 'Kural07', 0)"
+            ),
+            {"run": run_id},
+        )
+        with pytest.raises(IntegrityError):
+            async with connection.begin_nested():
+                await connection.execute(
+                    text(
+                        "INSERT INTO review_run_rule (review_run_id, rule_code, position) "
+                        "VALUES (:run, 'Kural00', 1)"
+                    ),
+                    {"run": run_id},
+                )
+        await connection.execute(
+            text("DELETE FROM review_run WHERE review_run_id = :run"), {"run": run_id}
+        )
+        remaining = await _scalar(
+            connection,
+            "SELECT (SELECT count(*) FROM review_run_rule_group WHERE review_run_id = :run) "
+            "+ (SELECT count(*) FROM review_run_rule WHERE review_run_id = :run)",
+            run=run_id,
+        )
+        assert remaining == 0
+        await connection.execute(
+            text("DELETE FROM rule_set_version WHERE rule_set_version_id = :v"),
+            {"v": version_id},
+        )
+
+
+# --- sql-review 008-scheduled-review-email ----------------------------------------------------
+
+_DEFINITION = (
+    "INSERT INTO scheduled_review (public_id, tenant_id, owner_user_id, name, selection_mode, "
+    "selection, frequency, weekday, day_of_month, run_hour, run_minute, timezone, recipients) "
+    "VALUES (:public_id, :tenant, :owner, :name, 'filter', CAST(:selection AS jsonb), "
+    ":frequency, :weekday, :day, 7, 30, 'Europe/Istanbul', CAST(:recipients AS jsonb)) "
+    "RETURNING scheduled_review_id"
+)
+
+
+async def _insert_definition(
+    connection: AsyncConnection,
+    tenant_id: int,
+    owner: int,
+    *,
+    name: str = "Gece taraması",
+    frequency: str = "daily",
+    weekday: int | None = None,
+    day: int | None = None,
+) -> int:
+    return int(
+        await _scalar(
+            connection,
+            _DEFINITION,
+            public_id=str(uuid4()),
+            tenant=tenant_id,
+            owner=owner,
+            name=name,
+            selection='{"database": "DWH"}',
+            frequency=frequency,
+            weekday=weekday,
+            day=day,
+            recipients='["a@kurum.example"]',
+        )
+    )
+
+
+async def _insert_scheduled_run(
+    connection: AsyncConnection, tenant_id: int, owner: int, version_id: int, definition: int
+) -> int:
+    return int(
+        await _scalar(
+            connection,
+            "INSERT INTO review_run (public_id, tenant_id, owner_user_id, kind, "
+            "rule_set_version_id, object_count, started_at, scheduled_review_id) VALUES "
+            "(:public_id, :tenant, :owner, 'scheduled', :version, 3, now(), :definition) "
+            "RETURNING review_run_id",
+            public_id=str(uuid4()),
+            tenant=tenant_id,
+            owner=owner,
+            version=version_id,
+            definition=definition,
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("frequency", "weekday", "day"),
+    (
+        ("weekly", None, None),
+        ("daily", 2, None),
+        ("monthly", None, None),
+        ("monthly", None, 29),
+        ("weekly", 7, None),
+        ("hourly", None, None),
+    ),
+)
+async def test_a_definition_period_must_be_one_of_the_closed_forms(
+    migrated_database: None, frequency: str, weekday: int | None, day: int | None
+) -> None:
+    async with engine.connect() as connection:
+        tenant_id = await _tenant_id(connection)
+        owner = await _insert_directory_user(connection, tenant_id)
+        with pytest.raises(IntegrityError):
+            await _insert_definition(
+                connection, tenant_id, owner, frequency=frequency, weekday=weekday, day=day
+            )
+        await connection.rollback()
+
+
+async def test_a_definition_name_is_unique_per_owner_regardless_of_case(
+    migrated_database: None,
+) -> None:
+    # The index folds ASCII letters; the service also folds Turkish dotted/dotless I before it
+    # writes (schedule_name_duplicate), which a C-collated lower() cannot do.
+    async with engine.connect() as connection:
+        tenant_id = await _tenant_id(connection)
+        owner = await _insert_directory_user(connection, tenant_id)
+        other = await _insert_directory_user(connection, tenant_id)
+        await _insert_definition(connection, tenant_id, owner, name="Gece kontrol")
+        await _insert_definition(connection, tenant_id, other, name="Gece kontrol")
+        with pytest.raises(IntegrityError):
+            await _insert_definition(connection, tenant_id, owner, name="GECE KONTROL")
+        await connection.rollback()
+
+
+async def test_only_a_scheduled_run_points_at_a_definition_and_may_hold_many_objects(
+    migrated_database: None,
+) -> None:
+    async with engine.connect() as connection:
+        tenant_id = await _tenant_id(connection)
+        owner = await _insert_directory_user(connection, tenant_id)
+        version_id = await _insert_version(connection, tenant_id, 900_101)
+        definition = await _insert_definition(connection, tenant_id, owner)
+        assert await _insert_scheduled_run(connection, tenant_id, owner, version_id, definition)
+        with pytest.raises(IntegrityError):
+            await connection.execute(
+                text(
+                    "INSERT INTO review_run (public_id, tenant_id, owner_user_id, kind, "
+                    "rule_set_version_id, object_count, started_at, scheduled_review_id) VALUES "
+                    "(:public_id, :tenant, :owner, 'object', :version, 1, now(), :definition)"
+                ),
+                {
+                    "public_id": str(uuid4()),
+                    "tenant": tenant_id,
+                    "owner": owner,
+                    "version": version_id,
+                    "definition": definition,
+                },
+            )
+        await connection.rollback()
+
+
+async def test_deleting_a_definition_removes_its_history_and_keeps_its_runs_unlinked(
+    migrated_database: None,
+) -> None:
+    async with engine.connect() as connection:
+        tenant_id = await _tenant_id(connection)
+        owner = await _insert_directory_user(connection, tenant_id)
+        version_id = await _insert_version(connection, tenant_id, 900_102)
+        definition = await _insert_definition(connection, tenant_id, owner)
+        run_id = await _insert_scheduled_run(connection, tenant_id, owner, version_id, definition)
+        await connection.execute(
+            text(
+                "INSERT INTO scheduled_review_run (public_id, scheduled_review_id, tenant_id, "
+                "review_run_id, due_at, trigger, state) VALUES (:public_id, :definition, "
+                ":tenant, :run, now(), 'scheduled', 'running')"
+            ),
+            {
+                "public_id": str(uuid4()),
+                "definition": definition,
+                "tenant": tenant_id,
+                "run": run_id,
+            },
+        )
+        await connection.execute(
+            text("DELETE FROM scheduled_review WHERE scheduled_review_id = :d"), {"d": definition}
+        )
+        history = await _scalar(
+            connection,
+            "SELECT count(*) FROM scheduled_review_run WHERE scheduled_review_id = :d",
+            d=definition,
+        )
+        link = await _scalar(
+            connection,
+            "SELECT scheduled_review_id FROM review_run WHERE review_run_id = :run",
+            run=run_id,
+        )
+        assert (history, link) == (0, None)
+        await connection.rollback()
+
+
+async def test_run_recipients_are_lower_case_and_deleted_with_the_run(
+    migrated_database: None,
+) -> None:
+    async with engine.connect() as connection:
+        tenant_id = await _tenant_id(connection)
+        owner = await _insert_directory_user(connection, tenant_id)
+        version_id = await _insert_version(connection, tenant_id, 900_103)
+        definition = await _insert_definition(connection, tenant_id, owner)
+        run_id = await _insert_scheduled_run(connection, tenant_id, owner, version_id, definition)
+        insert = text(
+            "INSERT INTO review_run_recipient (review_run_id, email) VALUES (:run, :email)"
+        )
+        await connection.execute(insert, {"run": run_id, "email": "ayse@kurum.example"})
+        with pytest.raises(IntegrityError):
+            async with connection.begin_nested():
+                await connection.execute(insert, {"run": run_id, "email": "Ali@Kurum.Example"})
+        await connection.execute(
+            text("DELETE FROM review_run WHERE review_run_id = :run"), {"run": run_id}
+        )
+        remaining = await _scalar(
+            connection,
+            "SELECT count(*) FROM review_run_recipient WHERE review_run_id = :run",
+            run=run_id,
+        )
+        assert remaining == 0
+        await connection.rollback()
+
+
+@pytest.mark.parametrize("limit", (0, 11))
+async def test_the_concurrency_setting_stays_between_1_and_10(
+    migrated_database: None, limit: int
+) -> None:
+    async with engine.connect() as connection:
+        tenant_id = await _tenant_id(connection)
+        with pytest.raises(IntegrityError):
+            await connection.execute(
+                text(
+                    "INSERT INTO scheduled_review_setting (tenant_id, max_concurrent_runs) "
+                    "VALUES (:tenant, :limit)"
+                ),
+                {"tenant": tenant_id, "limit": limit},
+            )
+        await connection.rollback()

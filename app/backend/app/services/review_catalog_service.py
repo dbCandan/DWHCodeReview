@@ -16,6 +16,7 @@ from app.domain.sql_server import (
     DATABASE_NOT_ALLOWED_MESSAGE,
     NOT_CONFIGURED_CODE,
     NOT_CONFIGURED_MESSAGE,
+    CatalogObject,
     DatabaseNotAllowed,
     SqlCatalogPort,
     SqlServerError,
@@ -65,6 +66,20 @@ class ReviewCatalogService:
         start = (page - 1) * page_size
         return DatabasePage(
             items=names[start : start + page_size], page=page, page_size=page_size, total=len(names)
+        )
+
+    async def matching_objects(
+        self, database: str, *, query: str | None, from_date: date | None
+    ) -> list[CatalogObject]:
+        """Every object of the filter at once, for a scheduled run (sql-review 008 Decision 4).
+
+        The same checks and error codes as the paged list; the type filter is the caller's.
+        """
+
+        if not self.catalog.is_allowed(database):
+            raise _not_allowed()
+        return await _catalog_call(
+            self.catalog.list_objects(database, query=query or None, from_date=from_date)
         )
 
     async def objects(

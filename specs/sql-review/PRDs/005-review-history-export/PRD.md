@@ -2,15 +2,18 @@
 
 Status: Accepted
 
-Version: 1.2.0
+Version: 1.5.0
 
-Acceptance date: 2026-10-02
+Acceptance date: 2026-10-14
 
 Domain: [sql-review](../../DOMAIN.md)
 
-Kabul kaydı: Proje sahibi bu PRD'yi 2026-10-02'de, bir koşumdaki nesne sayısı sınırını kaldıran
-kararının ([nesne incelemesi](../003-object-review/PRD.md) Decision 3) geçmiş ve dışa aktarıma
-etkisiyle (Requirement 3 ve 12) ve önceki sahip kararlarıyla kabul etti.
+Kabul kaydı: Proje sahibi bu PRD'yi 2026-10-14'te; zamanlanmış koşum alıcılarının o koşumun raporunu
+salt okunur görmesi kararıyla (Decision 8, [zamanlanmış inceleme](../008-scheduled-review-email/PRD.md)
+Decision 12), kural gruplarının CSV'nin son sütununda ve SQL yorumunda kuralın yanında yer alması kararıyla
+(Decision 9), nesne sayısı sınırını kaldıran kararın ([nesne incelemesi](../003-object-review/PRD.md)
+Decision 3) geçmiş ve dışa aktarıma etkisiyle (Requirement 3 ve 12) ve önceki sahip kararlarıyla kabul
+etti.
 
 ## Amaç
 
@@ -26,14 +29,20 @@ sonra kendiliğinden silinir.
 - **Kural yöneticisi** (`kural-yoneticisi`): İnceleyicinin yapabildiklerine ek olarak herkesin
   koşumlarını salt okunur görür ve indirir (Decision 1). Sonuç: kuralların hangi nesnelerde
   yanlış pozitif ürettiğini görebilir.
+- **Zamanlanmış koşum alıcısı**: Uygulamadaki e-posta adresi, bir zamanlanmış koşum çalıştığı anda
+  tanımın alıcı listesinde bulunan kullanıcı. O koşumu salt okunur görür ve CSV/SQL indirir; işaretleyemez
+  ve silemez (Decision 8). Sonuç: e-postadaki "Raporu aç" bağlantısı alıcı için çalışır.
 - **İşletim ekibi**: Saklama süresini ortam ayarıyla belirler.
 
 ## Değişmezler ve sınırlar
 
 - Geçmiş yalnız sunucuda, PostgreSQL'de (uygulamanın veritabanı) tutulur; tarayıcı depolaması
   kullanılmaz.
-- Bir koşumu ve onun saklanan SQL metnini yalnız sahibi (koşumu başlatan kullanıcı) ve kural yöneticisi
-  görür (Decision 1). Başkasının koşumu için yanıt, koşum yokmuş gibi 404'tür.
+- Bir koşumu ve onun saklanan SQL metnini yalnız sahibi (koşumu başlatan kullanıcı; zamanlanmış koşumda
+  tanımın sahibi), kural yöneticisi ve zamanlanmış koşumda o koşumun alıcısı görür (Decision 1, 8).
+  Alıcılık, koşumla saklanan alıcı listesindeki adresin kullanıcının e-postasıyla büyük-küçük harf
+  duyarsız eşleşmesidir; sonradan değişen tanım alıcıları geçmiş koşumların erişimini değiştirmez.
+  Başkasının koşumu için yanıt, koşum yokmuş gibi 404'tür.
 - Yanlış pozitif işaretini ve silmeyi yalnız koşumun sahibi yapar.
 - Dışa aktarım SQL Server'a bağlanmaz ve LLM (büyük dil modeli) çağırmaz; yalnız saklanan koşumu
   kullanır.
@@ -106,14 +115,16 @@ gündür (Decision 5). **Yeni davranış:** kaynaktaki "en çok 50 kayıt" sın�
 Requirement 7: CSV dışa aktarımı kaynaktaki dosyayla aynı yapıdadır: UTF-8 BOM (Excel'in Türkçe
 karakterleri doğru okuması için dosya başı işareti), satır sonu CRLF, sütunlar sırasıyla
 `generated_at, database, schema, name, object_type, rule_id, tier, status, severity, description,
-line_reference, code_snippet, false_positive`, tırnak kuralı ve satır düzleştirme kuralı
+line_reference, code_snippet, false_positive, rule_group`; `rule_group` kural sonucunun koşumdaki kural
+gruplarının adlarıdır (birden çoksa `; ` ile ayrılır), grupsuz kuralda ve kural sonucu olmayan satırda boştur (Decision 9), tırnak kuralı ve satır düzleştirme kuralı
 `buildReviewResultsCsv` ile aynıdır (başarısız kuralın bulguları varsa her bulgu bir satır, yoksa
 kural sonucu bir satır, sonuçsuz nesne tek satır, sonuçsuz hatalı koşum tek hata satırı). Dosya adı
 `sql-review-` ile başlar. **Yeni davranış:** `=`, `+`, `-`, `@`, sekme veya satır başı karakteriyle
 başlayan hücrelerin önüne `'` eklenir; böylece Excel hücreyi formül olarak çalıştırmaz.
 
 Requirement 8: SQL dışa aktarımı, kaynaktaki yorum bloğunu (`/*` … `*/`, başlık
-"SQL Review - Duzeltilmesi Gereken Yerler", nesne başına `- <kural> — <Satir …> — <açıklama>`,
+"SQL Review - Duzeltilmesi Gereken Yerler", nesne başına `- <kural> (<kural grupları, virgülle>) — <Satir …> —
+<açıklama>`; grupsuz kuralda parantez yazılmaz (Decision 9),
 açıklamada `|` yerine `¦`, madde yoksa "Tespit edilen duzeltme maddesi yok.") ve altında incelenen
 SQL metnini içerir. Nesne koşumunda her nesne `-- [veritabanı] şema.ad (tür)` başlığıyla ve aralarında
 `GO` ile yazılır; metin koşumunda yapıştırılan metin olduğu gibi yazılır. Yorumdaki her "Satir N"
@@ -147,13 +158,13 @@ Tüm uçlar `/api/dwhcodereview/v1` altındadır, geçerli oturum ister ve hatay
 | Yöntem ve yol | Rol | İstek → yanıt |
 |---|---|---|
 | `GET /review-runs` | inceleyici, kural-yoneticisi | `scope=mine\|all`, `page`, `page_size` → satırlar ve sayfa bilgisi |
-| `GET /review-runs/{run_id}` | sahip; kural-yoneticisi | `page`, `page_size` (nesne sayfası; varsayılan 50, en çok 200) → koşum ayrıntısı, o sayfanın sonuçları, `results_page` ve `results_page_size`; toplam `object_count` alanıdır (Requirement 3) |
+| `GET /review-runs/{run_id}` | sahip; kural-yoneticisi; zamanlanmış koşum alıcısı | `page`, `page_size` (nesne sayfası; varsayılan 50, en çok 200) → koşum ayrıntısı, o sayfanın sonuçları, `results_page` ve `results_page_size`; toplam `object_count` alanıdır (Requirement 3) |
 | `PUT /review-runs/{run_id}/findings/{finding_id}/false-positive` | sahip | `{false_positive: bool}` → güncel işaret |
 | `PUT /review-runs/{run_id}/rule-results/{rule_result_id}/false-positive` | sahip | `{false_positive: bool}` → güncel işaret |
 | `DELETE /review-runs/{run_id}` | sahip | → 204 |
 | `DELETE /review-runs?scope=mine` | sahip | → `{deleted_count}` |
-| `GET /review-runs/{run_id}/exports/csv` | sahip; kural-yoneticisi | → `text/csv; charset=utf-8`, indirme dosyası |
-| `GET /review-runs/{run_id}/exports/sql` | sahip; kural-yoneticisi | → `application/sql; charset=utf-8`, indirme dosyası |
+| `GET /review-runs/{run_id}/exports/csv` | sahip; kural-yoneticisi; zamanlanmış koşum alıcısı | → `text/csv; charset=utf-8`, indirme dosyası |
+| `GET /review-runs/{run_id}/exports/sql` | sahip; kural-yoneticisi; zamanlanmış koşum alıcısı | → `application/sql; charset=utf-8`, indirme dosyası |
 
 Hata kodları: 401 `not_authenticated`; 403 `review_scope_forbidden` (`scope=all` isteyen inceleyici)
 ve `review_run_not_owner` (görebildiği ama sahibi olmadığı koşumu değiştirme); 404
@@ -166,8 +177,8 @@ istekten dosya olarak kaydedilir.
 
 - Görme, işaretleme, silme ve indirme yetkisi her istekte arka uçta, sahiplik ve role göre
   denetlenir; sorgular etkin kiracı (kurum) kapsamındadır. Görme yetkisi olmayan koşum 404 alır.
-- Saklanan SQL metni kurum içi kaynak kodudur; yalnız koşumun sahibine ve kural yöneticisine dışa
-  aktarım ucundan döner, ayrıntı ve liste yanıtlarında yer almaz, loga yazılmaz.
+- Saklanan SQL metni kurum içi kaynak kodudur; yalnız koşumun sahibine, kural yöneticisine ve
+  zamanlanmış koşumun alıcısına dışa aktarım ucundan döner, ayrıntı ve liste yanıtlarında yer almaz, loga yazılmaz.
 - LLM'den gelen açıklama ve kod parçaları dosyaya yazılırken CSV'de formül koruması (Requirement 7)
   uygulanır; SQL dosyası yalnız metin olarak indirilir, sunucuda çalıştırılmaz.
 
@@ -219,7 +230,9 @@ istekten dosya olarak kaydedilir.
 - Gerçek PostgreSQL testleri: sahiplik ve rol başına 401/403/404, sayfalama, işaret tekrarı, silme
   kapsamı, süren koşumda 409, saklama işinin yalnız süresi dolanı ve iki kopyada tek kez silmesi;
   büyük koşumun ayrıntısının sayfa sayfa okunması, listenin nesne satırlarını ve SQL metnini okumaması,
-  sürücü parametre sınırından büyük koşumun (1.100 nesne × 30 kural) okunup dışa aktarılması.
+  sürücü parametre sınırından büyük koşumun (1.100 nesne × 30 kural) okunup dışa aktarılması;
+  zamanlanmış koşum alıcısının ayrıntıyı ve dışa aktarımı alması, işaretleme ve silmede `404`, alıcı
+  listesinde olmayanın `404` alması, e-posta eşleşmesinin büyük-küçük harf duyarsız olması.
 - Ön yüz testleri (Vitest): liste, ayrıntı, ayrıntıda nesne sayfaları arasında gezinme, bağlantıdaki
   koşumun seçili açılması, onaylar, indirme düğmeleri, pasif SQL düğmesi, `localStorage` geçmişinin
   yazılmaması.
@@ -252,6 +265,9 @@ istekten dosya olarak kaydedilir.
   dosyasını indirir ama işaret değiştiremez ve silemez;
   saklama süresi 1 güne ayarlanıp bitiş zamanı geçmişe çekilen koşum saklama işiyle silinir
   (Requirement 2, 4, 5, 6).
+- [ ] Acceptance 6: L1 — Otomatik testlerden geçti: zamanlanmış koşum alıcısının salt okunur erişimi ve
+  alıcı olmayanın `404` alması gerçek PostgreSQL testleriyle geçer (Decision 8). L2 kanıtı
+  [zamanlanmış inceleme](../008-scheduled-review-email/PRD.md) Acceptance 4 ile birlikte alınır.
 
 ## Kararlar
 
@@ -271,6 +287,16 @@ istekten dosya olarak kaydedilir.
   kılavuzu "rapor buna göre güncellenir" diyor, ancak kaynak SQL dosyasında bunu yapmıyordu.
 - Decision 7: Tarayıcıdaki eski geçmiş taşınmaz; kayıtların sahibi ve kural sürümü bilinmiyor, en çok 50
   kayıtlık geçici bir depo.
+- Decision 8: Zamanlanmış koşumun alıcısı olan kullanıcı o koşumun ayrıntısını salt okunur görür ve CSV/SQL
+  indirir; işaretleyemez, silemez. Alıcılık koşumla saklanan alıcı listesine göre belirlenir
+  ([zamanlanmış inceleme](../008-scheduled-review-email/PRD.md) Decision 12). Alıcı koşuma e-postadaki
+  bağlantıyla ulaşır; geçmiş listesine (`GET /review-runs`) alıcı için ayrı kapsam eklenmez. Dağıtım
+  listesi adresi kişiyle eşleşmediğinden liste üyeleri raporu açamaz. Proje sahibinin 2026-10-05 kararı.
+- Decision 9: Kural grubu ([kural grubu seçimi](../007-rule-group-selection/PRD.md)) CSV'de en son
+  `rule_group` sütunudur ve SQL yorumunda kural kimliğinin yanında parantez içinde yazılır; bir kural birden
+  çok gruptaysa adlar CSV'de `; `, SQL yorumunda virgülle ayrılır. Proje sahibinin 2026-10-06 ve
+  2026-10-14 kararı. Gerekçe: mevcut sütunların sırası değişmez; dosyayı sütun sırasıyla
+  okuyan araçlar bozulmaz.
 
 ## Teslim akışı
 

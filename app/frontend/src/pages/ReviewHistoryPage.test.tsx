@@ -28,7 +28,16 @@ function summary(overrides: Partial<ReviewRunSummary> = {}): ReviewRunSummary {
 }
 
 function detail(overrides: Partial<ReviewRunDetail> = {}): ReviewRunDetail {
-  return {...summary(), label: null, results: [storedResult()], results_page: 1, results_page_size: 50, ...overrides};
+  return {
+    ...summary(),
+    label: null,
+    results: [storedResult()],
+    results_page: 1,
+    results_page_size: 50,
+    all_rules: true,
+    selected_rule_groups: [],
+    ...overrides,
+  };
 }
 
 const cancelled = summary({
@@ -161,5 +170,68 @@ describe('review history page', () => {
     fireEvent.click(await screen.findByRole('button', {name: 'DWH · 1 nesne incelemesini sil'}));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', {name: 'Sil'}));
     expect(await screen.findByRole('alert')).toHaveTextContent('Süren bir inceleme silinemez.');
+  });
+});
+
+describe('review history page — rule groups (rule-group-selection Requirement 6)', () => {
+  beforeEach(() => {
+    vi.spyOn(ReviewService, 'runs').mockResolvedValue({items: [summary()], page: 1, page_size: 50, total: 1});
+  });
+
+  it('shows the groups the run used', async () => {
+    vi.spyOn(ReviewService, 'run').mockResolvedValue(
+      detail({
+        all_rules: false,
+        selected_rule_groups: [
+          {id: 'grp-perf', name: 'Performans'},
+          {id: 'grp-sec', name: 'Güvenlik'},
+        ],
+      }),
+    );
+    renderWithSession(<ReviewHistoryPage />);
+    fireEvent.click((await screen.findByText('DWH · 1 nesne')).closest('button')!);
+    expect(await screen.findByText('Kural grupları: Performans, Güvenlik')).toBeInTheDocument();
+  });
+
+  it('says every rule ran when no group was selected', async () => {
+    vi.spyOn(ReviewService, 'run').mockResolvedValue(detail());
+    renderWithSession(<ReviewHistoryPage />);
+    fireEvent.click((await screen.findByText('DWH · 1 nesne')).closest('button')!);
+    expect(await screen.findByText('Kurallar: Tüm kurallar')).toBeInTheDocument();
+  });
+
+  it('shows the single rules the run used (Decision 6)', async () => {
+    vi.spyOn(ReviewService, 'run').mockResolvedValue(
+      detail({all_rules: false, selected_rule_codes: ['Kural03', 'Kural07']}),
+    );
+    renderWithSession(<ReviewHistoryPage />);
+    fireEvent.click((await screen.findByText('DWH · 1 nesne')).closest('button')!);
+    expect(await screen.findByText('Seçilen kurallar: Kural03, Kural07')).toBeInTheDocument();
+  });
+});
+
+describe('review history page — scheduled runs (scheduled-review-email Requirement 6, Decision 12)', () => {
+  it('marks a scheduled run in the list', async () => {
+    vi.spyOn(ReviewService, 'runs').mockResolvedValue({
+      items: [summary({kind: 'scheduled'})],
+      page: 1,
+      page_size: 50,
+      total: 1,
+    });
+    vi.spyOn(ReviewService, 'run').mockResolvedValue(detail({kind: 'scheduled'}));
+    renderWithSession(<ReviewHistoryPage />);
+    expect(await screen.findByText('Zamanlanmış', {selector: '.badge'})).toBeInTheDocument();
+  });
+
+  it('opens a recipient run from the e-mail link although it is not in the list, read-only', async () => {
+    vi.spyOn(ReviewService, 'runs').mockResolvedValue({items: [], page: 1, page_size: 50, total: 0});
+    const read = vi
+      .spyOn(ReviewService, 'run')
+      .mockResolvedValue(detail({id: 'run-mail', kind: 'scheduled', owned: false, owner_display_name: 'Tanım Sahibi'}));
+    renderWithSession(<ReviewHistoryPage />, {path: '/gecmis?run=run-mail'});
+    expect(await screen.findByText('Bu inceleme başka bir kullanıcıya ait; yalnız okunabilir.')).toBeInTheDocument();
+    expect(read).toHaveBeenCalledWith('run-mail', 1, 50, expect.any(AbortSignal));
+    expect(screen.queryByRole('checkbox', {name: /yanlış pozitif/})).toBeNull();
+    expect(screen.getByRole('button', {name: 'CSV indir'})).toBeEnabled();
   });
 });

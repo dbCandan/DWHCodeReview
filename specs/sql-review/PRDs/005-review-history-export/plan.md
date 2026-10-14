@@ -1,6 +1,6 @@
 # Plan — review-history-export
 
-[PRD](PRD.md) belgesinden türetildi (`Status: Accepted`, Version 1.2.0). Proje kipi `separated-web`;
+[PRD](PRD.md) belgesinden türetildi (`Status: Accepted`, Version 1.5.0). Proje kipi `separated-web`;
 sabit yığın `python-fastapi` arka uç ve `React`/`Vite` ön yüzdür.
 
 ## Veri modeli ve ayarlar
@@ -74,6 +74,9 @@ Saklama işi için `review_run.finished_at` üzerinde dizin vardır (Requirement
   kaydırması ve aralığın ilk sayısını iki kez kaydıran hata yoktur. Yanlış pozitif işaretli bulgu
   ve kural sonucu yoruma yazılmaz. Dosya adı `sql-review-source-<ms>.sql`, tür
   `application/sql; charset=utf-8` (Requirement 8, 9, Decision 6).
+- Kural grupları (Decision 9): CSV'nin son sütunu `rule_group`, kural sonucunun koşum anındaki grup
+  adlarını sürüm içi grup sırasıyla `; ` ile birleştirir; SQL yorumunda kural kimliğinin yanında grup
+  adları virgülle yazılır. Grupsuz kuralda sütun boş, yorumda ek yoktur.
 - Saklanmış metni olmayan koşum (tamamlanmamış veya bütün nesneleri hatalı) SQL dışa aktarımında
   `409 sql_text_unavailable` alır (Requirement 10).
 - Günlük olayları: `review_history.deleted` (koşum, sayı, kullanıcı), `review_history.exported`

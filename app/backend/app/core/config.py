@@ -171,6 +171,26 @@ class Settings(BaseSettings):
     review_rate_limit_max_requests: Annotated[int, Field(ge=1, le=10_000)] = 30
     review_history_retention_days: Annotated[int, Field(ge=1, le=365)] = 90
 
+    # Scheduled reviews (sql-review 008-scheduled-review-email). The scheduler is a module of
+    # this process (Decision 2), off unless enabled; the chart gains no workload for it.
+    scheduler_enabled: bool = False
+    scheduler_tick_seconds: Annotated[int, Field(ge=5, le=3600)] = 60
+    # Corporate SMTP relay of the summary e-mail. Without host or sender the scheduler still
+    # runs and stores reports; the e-mail is then recorded as not configured. Only verified TLS
+    # is used (STARTTLS or implicit TLS); empty CA bundle uses the image's system trust store.
+    # The password is a runtime secret only.
+    smtp_host: str = ""
+    smtp_port: Annotated[int, Field(ge=1, le=65535)] = 587
+    smtp_security: Literal["starttls", "tls"] = "starttls"
+    smtp_username: str = ""
+    smtp_password: SecretStr | None = None
+    smtp_sender: str = ""
+    smtp_ca_bundle: str = ""
+    smtp_timeout_seconds: Annotated[int, Field(ge=1, le=120)] = 30
+    # Comma-separated corporate e-mail domains a recipient may use (Decision 5); empty
+    # refuses every recipient.
+    mail_allowed_domains: str = ""
+
     # OpenTelemetry traces and metrics over OTLP/gRPC (app/core/telemetry.py). Empty disables
     # export; the local observability Compose overlay points it at its collector. Only these typed
     # settings configure telemetry: a process variable starting with OTEL_ stops startup.
@@ -353,6 +373,22 @@ class Settings(BaseSettings):
     @property
     def local_login_super_admin_only(self) -> bool:
         return self.runtime_environment == "nonprod" or self.local_login_super_admin_only_enforced
+
+    @property
+    def mail_allowed_domain_list(self) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                {
+                    domain.strip().lower()
+                    for domain in self.mail_allowed_domains.split(",")
+                    if domain.strip()
+                }
+            )
+        )
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.smtp_host.strip() and self.smtp_sender.strip())
 
     @property
     def mssql_connection_complete(self) -> bool:

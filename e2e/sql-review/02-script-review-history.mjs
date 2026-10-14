@@ -123,8 +123,9 @@ await withBrowser('script review, live progress, stop, history and exports', asy
     const csv = await readFile(await csvDownload.path(), 'utf8');
     assert.equal(csv.charCodeAt(0), 0xfeff, 'CSV starts with a UTF-8 BOM');
     assert.match(csv, /\r\n/);
-    assert.match(csv.split('\r\n')[0], /^﻿generated_at,database,schema,name,object_type,rule_id,tier,status,severity,description,line_reference,code_snippet,false_positive$/);
-    assert.match(csv, /Kural01.*,true\r\n/);
+    assert.match(csv.split('\r\n')[0], /^﻿generated_at,database,schema,name,object_type,rule_id,tier,status,severity,description,line_reference,code_snippet,false_positive,rule_group$/);
+    // The false-positive column is followed by the rule_group column (review-history-export 1.4.0).
+    assert.match(csv, /Kural01.*,true,[^\r\n]*\r\n/);
 
     const [sqlDownload] = await Promise.all([
       secondBrowser.waitForEvent('download'),

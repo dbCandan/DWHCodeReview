@@ -34,6 +34,10 @@ from app.infrastructure.sql_server import queries
 from app.infrastructure.sql_server.catalog_adapter import PyodbcSqlCatalog
 from app.services.sql_connection_service import SqlConnectionStore, StoredSqlConnection
 from tests.integration.conftest import SuperAdmin
+from tests.integration.test_rule_groups_migration import clear_rule_group_data
+from tests.integration.test_scheduled_reviews_migration import (
+    clear_scheduled_review_data,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -352,6 +356,10 @@ async def test_a_failed_read_keeps_the_last_connection_and_reports_the_error_typ
 
 def test_the_migrations_go_down_and_up_again(migrated_database: None) -> None:
     config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    # The step below 202610050001 refuses stored rule group data (rule-group-selection
+    # Decision 4); this test walks through it, so it starts without any.
+    clear_scheduled_review_data()
+    clear_rule_group_data()
 
     async def columns() -> set[str]:
         probe = create_async_engine(get_settings().database_url)

@@ -13,6 +13,10 @@
 #   DWHCODEREVIEW_MSSQL_USER       pipeline MSSQL_USER, else the cluster value, else absent
 #   DWHCODEREVIEW_MSSQL_PASSWORD   pipeline MSSQL_PASSWORD, else the cluster value, else absent
 #   DWHCODEREVIEW_LLM_API_KEY      pipeline LLM_API_KEY, else the cluster value, else absent
+#   DWHCODEREVIEW_SMTP_USERNAME    pipeline SMTP_USER, else the cluster value, else absent
+#   DWHCODEREVIEW_SMTP_PASSWORD    pipeline SMTP_PASSWORD, else the cluster value, else absent;
+#                                  the corporate relay login of the scheduled review e-mail
+#                                  (specs/sql-review/PRDs/008-scheduled-review-email)
 #   DWHCODEREVIEW_BOOTSTRAP_SUPER_ADMIN_PASSWORD
 #                                  pipeline DWHCODEREVIEW_ADMIN_PASSWORD, else the cluster value,
 #                                  else absent; the backend creates the super admin with it once
@@ -121,10 +125,16 @@ settle DWHCODEREVIEW_SETTINGS_ENCRYPTION_KEY SETTINGS_ENCRYPTION_KEY encryption-
 settle DWHCODEREVIEW_MSSQL_USER MSSQL_USER optional
 settle DWHCODEREVIEW_MSSQL_PASSWORD MSSQL_PASSWORD optional
 settle DWHCODEREVIEW_LLM_API_KEY LLM_API_KEY optional
+settle DWHCODEREVIEW_SMTP_USERNAME SMTP_USER optional
+settle DWHCODEREVIEW_SMTP_PASSWORD SMTP_PASSWORD optional
 settle DWHCODEREVIEW_BOOTSTRAP_SUPER_ADMIN_PASSWORD DWHCODEREVIEW_ADMIN_PASSWORD optional
 if [[ -s "$work/keys/DWHCODEREVIEW_MSSQL_USER" ]] \
   && LC_ALL=C grep -q '[[:cntrl:]]' "$work/keys/DWHCODEREVIEW_MSSQL_USER"; then
   fail 'MSSQL_USER must not contain control characters'
+fi
+if [[ -s "$work/keys/DWHCODEREVIEW_SMTP_USERNAME" ]] \
+  && LC_ALL=C grep -q '[[:cntrl:]]' "$work/keys/DWHCODEREVIEW_SMTP_USERNAME"; then
+  fail 'SMTP_USER must not contain control characters'
 fi
 
 if [[ ${#changed[@]} -eq 0 ]]; then

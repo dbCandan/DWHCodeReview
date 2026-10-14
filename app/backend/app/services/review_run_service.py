@@ -52,6 +52,7 @@ from app.domain.review import (
     ReviewRule,
     ordered_rules,
 )
+from app.domain.rule_set import RuleGroup, RuleSetValidationError
 from app.domain.sql_server import (
     CATALOG_OBJECT_TYPES,
     DATABASE_NOT_ALLOWED_CODE,
@@ -91,6 +92,7 @@ from app.schemas.reviews.events import (
     RulesBatchStartEvent,
     RuleStartEvent,
     RunStartedEvent,
+    SelectedRuleGroup,
     SqlReadyEvent,
 )
 from app.services.request_scope import acting_user, active_tenant
@@ -159,7 +161,9 @@ class ReviewRunRegistry:
             await asyncio.wait(tasks, timeout=timeout)
 
 
-async def interrupt_stale_runs(session_factory: async_sessionmaker[AsyncSession]) -> int:
+async def interrupt_stale_runs(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> int:
     """At process start, runs still marked running were cut off (Requirement 16).
 
     A database that is not reachable yet does not stop the start; the next start retries.
@@ -199,6 +203,16 @@ class _PlannedObject:
         }
 
 
+def metric_kind(kind: ReviewRunKind) -> str:
+    """The kind label of the run metrics; a scheduled run counts as an object run.
+
+    sql-review 008-scheduled-review-email Decision 10: no new metric, and the existing run
+    metrics keep their label values.
+    """
+
+    return ReviewRunKind.OBJECT.value if kind is ReviewRunKind.SCHEDULED else kind.value
+
+
 @dataclass(frozen=True, slots=True)
 class _RunPlan:
     run_id: int
@@ -211,6 +225,14 @@ class _RunPlan:
     rules: tuple[ReviewRule, ...]
     objects: tuple[_PlannedObject, ...]
     script_sql: str | None = field(default=None, repr=False)
+    # rule-group-selection Requirement 5: the groups and single rules the run reviews with;
+    # both empty = every rule.
+    selected_groups: tuple[RuleGroup, ...] = ()
+    selected_rule_codes: tuple[str, ...] = ()
+
+    @property
+    def rule_group_names(self) -> dict[str, tuple[str, ...]]:
+        return {rule.code: rule.group_names for rule in self.rules}
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,6 +253,7 @@ def _live_results(
     plan: _RunPlan, outcomes: Sequence[ObjectOutcome], stored: Sequence[StoredResult]
 ) -> list[LiveObjectResultItem]:
     results: list[LiveObjectResultItem] = []
+    names = plan.rule_group_names
     for planned, outcome, ids in zip(plan.objects, outcomes, stored, strict=True):
         finding_ids = iter(ids.finding_ids)
         rule_results = [
@@ -245,6 +268,7 @@ def _live_results(
                 line_reference=check.line_reference,
                 code_snippet=check.code_snippet,
                 false_positive=False,
+                rule_group_names=list(names.get(check.rule_code, ())),
             )
             for result_id, check in zip(ids.rule_result_ids, outcome.checks, strict=True)
         ]
@@ -344,7 +368,7 @@ class ReviewExecution:
     async def _run(self, emit: EventSink) -> None:
         plan = self._plan
         with review_run(
-            plan.kind.value, object_count=len(plan.objects), rule_count=len(plan.rules)
+            metric_kind(plan.kind), object_count=len(plan.objects), rule_count=len(plan.rules)
         ) as run:
             await self._run_to_end(emit, run)
 
@@ -360,6 +384,12 @@ class ReviewExecution:
                     kind=plan.kind.value,
                     rule_version=plan.rule_version,
                     objects_total=len(plan.objects),
+                    selected_rule_groups=[
+                        SelectedRuleGroup(id=group.public_id, name=group.name)
+                        for group in plan.selected_groups
+                    ],
+                    selected_rule_codes=list(plan.selected_rule_codes),
+                    all_rules=not plan.selected_groups and not plan.selected_rule_codes,
                 )
             )
             async with self._runtime.llm.open_run() as session:
@@ -385,7 +415,12 @@ class ReviewExecution:
             else:
                 code, message = REVIEW_FAILED_CODE, REVIEW_FAILED_MESSAGE
             await self._finish(ReviewRunStatus.FAILED, code, message)
-            self._log("review_run.failed", started, error_code=code, error_type=type(root).__name__)
+            self._log(
+                "review_run.failed",
+                started,
+                error_code=code,
+                error_type=type(root).__name__,
+            )
             run.status = ReviewRunStatus.FAILED.value
             await emit(ErrorEvent(code=code, message=message))
             return
@@ -395,7 +430,7 @@ class ReviewExecution:
             await emit(ErrorEvent(code=REVIEW_FAILED_CODE, message=REVIEW_FAILED_MESSAGE))
             return
         record_rule_results(
-            plan.kind.value,
+            metric_kind(plan.kind),
             (check.status.value for outcome in outcomes for check in outcome.checks),
         )
         self._log(
@@ -494,7 +529,7 @@ class ReviewExecution:
                     )
                 )
             elif isinstance(event, RuleFinished):
-                record_rule_call(self._plan.kind.value, ok=event.ok)
+                record_rule_call(metric_kind(self._plan.kind), ok=event.ok)
                 await emit(
                     RuleDoneEvent(
                         **fields,
@@ -561,7 +596,10 @@ class ReviewExecution:
         await emit(DefinitionFetchEvent(**fields))
         try:
             definition = await catalog.fetch_definition(
-                selection.database, selection.schema, selection.name, selection.type_code
+                selection.database,
+                selection.schema,
+                selection.name,
+                selection.type_code,
             )
         except SqlServerError as error:
             return await self._object_error(
@@ -573,7 +611,11 @@ class ReviewExecution:
             )
         except DatabaseNotAllowed:
             return await self._object_error(
-                planned, fields, emit, DATABASE_NOT_ALLOWED_CODE, DATABASE_NOT_ALLOWED_MESSAGE
+                planned,
+                fields,
+                emit,
+                DATABASE_NOT_ALLOWED_CODE,
+                DATABASE_NOT_ALLOWED_MESSAGE,
             )
         except Exception:  # noqa: BLE001 - Requirement 5: the other objects continue
             failed = SqlServerErrorClass.QUERY_FAILED
@@ -638,6 +680,7 @@ class ReviewExecution:
                 finished_at=datetime.now(UTC),
                 outcomes=outcomes,
                 collect_identifiers=len(outcomes) <= LIVE_RESULTS_MAX_OBJECTS,
+                rule_group_names=self._plan.rule_group_names,
             )
 
     async def _finish(
@@ -684,9 +727,57 @@ class ReviewRunService:
         self.reviews = ReviewRepository(session)
 
     async def start_object_review(
-        self, context: RequestContext, selections: Sequence[ObjectSelection]
+        self,
+        context: RequestContext,
+        selections: Sequence[ObjectSelection],
+        rule_group_ids: Sequence[str] = (),
+        rule_codes: Sequence[str] = (),
     ) -> ReviewExecution:
         tenant_id, actor_id, actor_public_id = await self._admit(context)
+        catalog, planned = self._plan_objects(selections)
+        return await self._create(
+            tenant_id,
+            actor_id,
+            actor_public_id,
+            ReviewRunKind.OBJECT,
+            planned,
+            catalog=catalog,
+            rule_group_ids=rule_group_ids,
+            rule_codes=rule_codes,
+        )
+
+    async def start_scheduled_review(
+        self,
+        *,
+        tenant_id: int,
+        owner_user_id: int,
+        owner_public_id: str,
+        scheduled_review_id: int,
+        selections: Sequence[ObjectSelection],
+        rule_group_ids: Sequence[str] = (),
+    ) -> ReviewExecution:
+        """Start a run of a scheduled review definition (sql-review 008 Requirement 4).
+
+        The same checks and execution as an object review, without a request: the run belongs to
+        the definition's owner, carries the scheduled kind and its definition, and its events are
+        consumed on the server instead of a browser stream.
+        """
+
+        catalog, planned = self._plan_objects(selections)
+        return await self._create(
+            tenant_id,
+            owner_user_id,
+            owner_public_id,
+            ReviewRunKind.SCHEDULED,
+            planned,
+            catalog=catalog,
+            rule_group_ids=rule_group_ids,
+            scheduled_review_id=scheduled_review_id,
+        )
+
+    def _plan_objects(
+        self, selections: Sequence[ObjectSelection]
+    ) -> tuple[SqlCatalogPort, list[_PlannedObject]]:
         if not selections:
             raise _unprocessable("selection_empty", "İncelemek için en az bir nesne seçin.")
         if any(item.type_code not in CATALOG_OBJECT_TYPES for item in selections):
@@ -695,7 +786,9 @@ class ReviewRunService:
         assert catalog is not None
         if any(not catalog.is_allowed(item.database) for item in selections):
             raise ApplicationError(
-                status.HTTP_403_FORBIDDEN, DATABASE_NOT_ALLOWED_CODE, DATABASE_NOT_ALLOWED_MESSAGE
+                status.HTTP_403_FORBIDDEN,
+                DATABASE_NOT_ALLOWED_CODE,
+                DATABASE_NOT_ALLOWED_MESSAGE,
             )
         planned = [
             _PlannedObject(
@@ -707,12 +800,15 @@ class ReviewRunService:
             )
             for position, item in enumerate(selections)
         ]
-        return await self._create(
-            tenant_id, actor_id, actor_public_id, ReviewRunKind.OBJECT, planned, catalog=catalog
-        )
+        return catalog, planned
 
     async def start_script_review(
-        self, context: RequestContext, sql: str, label: str | None
+        self,
+        context: RequestContext,
+        sql: str,
+        label: str | None,
+        rule_group_ids: Sequence[str] = (),
+        rule_codes: Sequence[str] = (),
     ) -> ReviewExecution:
         tenant_id, actor_id, actor_public_id = await self._admit(context)
         text = sql.strip()
@@ -721,7 +817,8 @@ class ReviewRunService:
         limit = self.runtime.text_limit
         if len(text) > limit:
             raise _unprocessable(
-                "sql_text_too_long", f"SQL metni en çok {_thousands(limit)} karakter olabilir."
+                "sql_text_too_long",
+                f"SQL metni en çok {_thousands(limit)} karakter olabilir.",
             )
         display = (label or "").strip() or SCRIPT_DEFAULT_LABEL
         if len(display) > LABEL_MAX_LENGTH:
@@ -744,6 +841,8 @@ class ReviewRunService:
             planned,
             label=display,
             script_sql=text,
+            rule_group_ids=rule_group_ids,
+            rule_codes=rule_codes,
         )
 
     async def _admit(self, context: RequestContext) -> tuple[int, int, str]:
@@ -774,6 +873,9 @@ class ReviewRunService:
         catalog: SqlCatalogPort | None = None,
         label: str | None = None,
         script_sql: str | None = None,
+        rule_group_ids: Sequence[str] = (),
+        rule_codes: Sequence[str] = (),
+        scheduled_review_id: int | None = None,
     ) -> ReviewExecution:
         if self.llm_endpoint() is None:
             raise ApplicationError(
@@ -789,6 +891,24 @@ class ReviewRunService:
                 "no_published_rule_set",
                 "Yayımlanmış kural olmadığı için inceleme başlatılamaz.",
             )
+        # rule-group-selection Requirement 4: restrict the pinned version to the selection.
+        try:
+            selected = rule_set.select(rule_group_ids, rule_codes)
+        except RuleSetValidationError as error:
+            raise _unprocessable(error.code, error.message) from None
+        group_ids = set(rule_group_ids)
+        selected_groups = [
+            (position, group)
+            for position, group in enumerate(rule_set.rules.rule_groups)
+            if group.public_id in group_ids
+        ]
+        codes = set(rule_codes)
+        selected_codes = [
+            rule.code
+            for _, members in rule_set.rules.grouped()
+            for rule in members
+            if rule.code in codes
+        ]
         run = await self.reviews.create_run(
             tenant_id=tenant_id,
             owner_user_id=actor_id,
@@ -806,6 +926,9 @@ class ReviewRunService:
                 )
                 for item in planned
             ],
+            selected_groups=selected_groups,
+            selected_rule_codes=selected_codes,
+            scheduled_review_id=scheduled_review_id,
         )
         await self.session.commit()
         # The request session lives as long as the stream; it must not keep a row per object.
@@ -818,9 +941,11 @@ class ReviewRunService:
             owner_public_id=actor_public_id,
             kind=kind,
             rule_version=rule_set.number,
-            rules=ordered_rules(rule_set),
+            rules=ordered_rules(selected),
             objects=tuple(planned),
             script_sql=script_sql,
+            selected_groups=tuple(group for _, group in selected_groups),
+            selected_rule_codes=tuple(selected_codes),
         )
         log_event(
             logger,
@@ -831,6 +956,8 @@ class ReviewRunService:
             rule_version=plan.rule_version,
             object_count=len(planned),
             rule_count=len(plan.rules),
+            rule_group_count=len(plan.selected_groups),
+            selected_rule_count=len(plan.selected_rule_codes),
         )
-        record_review_run_started(kind.value)
+        record_review_run_started(metric_kind(kind))
         return ReviewExecution(plan, self.runtime, catalog)

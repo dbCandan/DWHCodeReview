@@ -466,12 +466,13 @@ async def test_the_csv_export_marks_false_positives_and_blocks_formulas(
     lines = response.content.decode("utf-8").split("\r\n")
     assert lines[0] == (
         "﻿generated_at,database,schema,name,object_type,rule_id,tier,status,severity,"
-        "description,line_reference,code_snippet,false_positive"
+        "description,line_reference,code_snippet,false_positive,rule_group"
     )
     assert len(lines) == 4
-    assert lines[1].endswith(",Yıldız var,Satır 1,SELECT *,true")
+    # 005 Decision 9: rule_group is the last column; these rules are ungrouped.
+    assert lines[1].endswith(",Yıldız var,Satır 1,SELECT *,true,")
     assert ",sql,Etiket,SCRIPT," in lines[1]
-    assert ",'=HYPERLINK()," in lines[2] and lines[2].endswith(",false")
+    assert ",'=HYPERLINK()," in lines[2] and lines[2].endswith(",false,")
     assert f",{codes[1]},,FAIL,LOW,NULL,Satır 3,WHERE Kimlik = NULL,false" in lines[3]
     assert (await _get(review_env, f"/{run['run_id']}/exports/csv", manager)).status_code == 200
     assert (await _get(review_env, f"/{run['run_id']}/exports/csv", colleague)).status_code == 404
@@ -539,7 +540,7 @@ async def test_runs_without_stored_text_have_no_sql_file(review_env: ReviewEnv) 
         assert refused.json()["detail"]["code"] == "sql_text_unavailable"
         assert (await _get(review_env, f"/{run_id}", reviewer)).json()["results"] == []
     csv = (await _get(review_env, f"/{failed[0]['run_id']}/exports/csv", reviewer)).text
-    assert csv.split("\r\n")[1].endswith(",,,,,,,,,LLM bağlantısı yapılandırılmamış.,,,false")
+    assert csv.split("\r\n")[1].endswith(",,,,,,,,,LLM bağlantısı yapılandırılmamış.,,,false,")
 
 
 async def test_other_tenants_never_see_a_run(

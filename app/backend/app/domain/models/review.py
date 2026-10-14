@@ -21,6 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base_class import Base
@@ -35,10 +36,15 @@ LABEL_MAX_LENGTH = 200
 
 
 class ReviewRunKind(StrEnum):
-    """What a run reviews: SQL Server objects (nesne) or pasted SQL text (metin)."""
+    """What a run reviews: SQL Server objects (nesne) or pasted SQL text (metin).
+
+    A scheduled run (sql-review scheduled-review-email) reviews objects like an object run but
+    is started by a scheduled review definition in the background.
+    """
 
     OBJECT = "object"
     SCRIPT = "script"
+    SCHEDULED = "scheduled"
 
 
 class ReviewRunStatus(StrEnum):
@@ -93,7 +99,7 @@ class ReviewRun(AuditSoftDeleteMixin, Base):
         ),
         Index("ix_review_run_tenant_started", "tenant_id", "started_at"),
         Index("ix_review_run_finished_at", "finished_at"),
-        CheckConstraint("kind IN ('object', 'script')", name="kind_allowed"),
+        CheckConstraint("kind IN ('object', 'script', 'scheduled')", name="kind_allowed"),
         CheckConstraint(
             "status IN ('running', 'completed', 'failed', 'cancelled', 'interrupted')",
             name="status_allowed",
@@ -103,7 +109,11 @@ class ReviewRun(AuditSoftDeleteMixin, Base):
             "kind = 'script' OR label IS NULL",
             name="label_only_for_script",
         ),
-        CheckConstraint("kind = 'object' OR object_count = 1", name="script_has_one_object"),
+        CheckConstraint("kind <> 'script' OR object_count = 1", name="script_has_one_object"),
+        CheckConstraint(
+            "kind = 'scheduled' OR scheduled_review_id IS NULL",
+            name="scheduled_review_only_for_scheduled",
+        ),
         CheckConstraint(
             f"label IS NULL OR char_length(label) BETWEEN 1 AND {LABEL_MAX_LENGTH}",
             name="label_length",
@@ -149,7 +159,19 @@ class ReviewRun(AuditSoftDeleteMixin, Base):
         nullable=False,
         comment=(
             "Run kind; code reflection app.domain.models.review.ReviewRunKind: 'object' = "
-            "SQL Server objects (nesne), 'script' = pasted SQL text (metin)."
+            "SQL Server objects (nesne), 'script' = pasted SQL text (metin), 'scheduled' = "
+            "objects reviewed by a scheduled review definition (zamanlanmış)."
+        ),
+    )
+    scheduled_review_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("scheduled_review.scheduled_review_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment=(
+            "Scheduled review definition that started a scheduled run; empty for other runs "
+            "and after the definition is deleted. References "
+            "scheduled_review.scheduled_review_id."
         ),
     )
     label: Mapped[str | None] = mapped_column(
@@ -352,6 +374,17 @@ class ReviewRuleResult(AuditSoftDeleteMixin, Base):
         nullable=False,
         comment="Priority group of the rule: 'critical' or 'normal'.",
     )
+    rule_group_names: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        comment=(
+            "JSON array of the names of the rule's named groups in the version the run pinned, "
+            "in group order (sql-review rule-group-selection); empty for an ungrouped rule. "
+            "Reports and exports show it."
+        ),
+    )
     status: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
@@ -478,4 +511,83 @@ class ReviewFinding(AuditSoftDeleteMixin, Base):
     )
     false_positive_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, comment=_FALSE_POSITIVE_AT_COMMENT
+    )
+
+
+class ReviewRunRuleGroup(AuditSoftDeleteMixin, Base):
+    __tablename__ = "review_run_rule_group"
+    __table_args__ = (
+        Index(
+            "ix_review_run_rule_group_active_run",
+            "review_run_id",
+            postgresql_where=text("is_deleted = false"),
+        ),
+        CheckConstraint("position >= 0", name="position_not_negative"),
+        {
+            "comment": (
+                "A named rule group a review run was started with (sql-review "
+                "rule-group-selection), copied from the pinned version. A run without rows used "
+                "every rule. Inserted with the run and deleted with it."
+            )
+        },
+    )
+
+    review_run_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("review_run.review_run_id", ondelete="CASCADE"),
+        primary_key=True,
+        comment="Run; references review_run.review_run_id and is deleted with it.",
+    )
+    rule_group_public_id: Mapped[str] = mapped_column(
+        Text,
+        primary_key=True,
+        comment=(
+            "Public identifier of the selected group, as in "
+            "rule_set_version_group.rule_group_public_id of the pinned version."
+        ),
+    )
+    name: Mapped[str] = mapped_column(
+        String(80), nullable=False, comment="Group name in the pinned version."
+    )
+    position: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="Zero-based order of the group in the pinned version.",
+    )
+
+
+class ReviewRunRule(AuditSoftDeleteMixin, Base):
+    __tablename__ = "review_run_rule"
+    __table_args__ = (
+        Index(
+            "ix_review_run_rule_active_run",
+            "review_run_id",
+            postgresql_where=text("is_deleted = false"),
+        ),
+        CheckConstraint(f"rule_code ~ '{RULE_CODE_PATTERN}'", name="rule_code_format"),
+        CheckConstraint("position >= 0", name="position_not_negative"),
+        {
+            "comment": (
+                "A single rule a review run was started with besides its groups (sql-review "
+                "rule-group-selection Decision 6). A run without rows here and in "
+                "review_run_rule_group used every rule. Inserted with the run and deleted with it."
+            )
+        },
+    )
+
+    review_run_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("review_run.review_run_id", ondelete="CASCADE"),
+        primary_key=True,
+        comment="Run; references review_run.review_run_id and is deleted with it.",
+    )
+    rule_code: Mapped[str] = mapped_column(
+        String(16),
+        primary_key=True,
+        comment="Selected KuralNN code of the pinned version.",
+    )
+    position: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="Zero-based order of the rule in the pinned version, critical rules first.",
     )

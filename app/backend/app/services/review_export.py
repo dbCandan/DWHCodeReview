@@ -6,6 +6,8 @@ now built on the server from the stored run. Changes the PRD requires: CSV cells
 spreadsheet would run as a formula get a leading ``'``; false-positive marks leave the SQL
 comment block; every "Satir N" in that block is the real line of the downloaded file on which
 source line N stands, computed from the file itself instead of the source's "-1" shift.
+The rule's named group is the last CSV column and stands next to the rule in the SQL comment
+(005 Requirement 7-8 and Decision 9, sql-review/PRDs/007-rule-group-selection).
 Nothing here touches the network, a database or a file.
 """
 
@@ -27,6 +29,7 @@ CSV_HEADERS = (
     "line_reference",
     "code_snippet",
     "false_positive",
+    "rule_group",
 )
 # JavaScript's String.prototype.trim and \s set, so the files match the previous exports.
 JS_WHITESPACE = "\t\n\v\f\r             " "     　﻿"
@@ -54,6 +57,8 @@ class ExportRuleResult:
     line_reference: str
     code_snippet: str = field(repr=False)
     false_positive: bool
+    # Names of the rule's groups in the pinned version, in group order (007 Requirement 7).
+    rule_groups: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +69,8 @@ class ExportFinding:
     line_reference: str
     code_snippet: str = field(repr=False)
     false_positive: bool
+    # Names of the rule's groups in the pinned version, in group order (007 Requirement 7).
+    rule_groups: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,7 +123,7 @@ def results_csv_header() -> str:
 
 def results_csv_error_row(generated_at: str, database: str, review_error: str) -> str:
     error_row = [generated_at, database, "", "", "", "", "", "", "", review_error, "", ""]
-    return _csv_line([*error_row, "false"])
+    return _csv_line([*error_row, "false", ""])
 
 
 def results_csv_rows(
@@ -145,6 +152,7 @@ def results_csv_rows(
                     finding.line_reference,
                     finding.code_snippet,
                     "true" if finding.false_positive else "false",
+                    _group_cell(finding.rule_groups),
                 ]
             )
 
@@ -171,13 +179,14 @@ def results_csv_rows(
                             result.line_reference,
                             result.code_snippet,
                             "true" if _fail_rule_marked(item, result) else "false",
+                            _group_cell(result.rule_groups),
                         ]
                     )
                 )
         elif item.findings:
             lines.extend(finding_row(finding) for finding in item.findings)
         else:
-            lines.append(_csv_line([*prefix, "", "", "", "", meta, "", "", "false"]))
+            lines.append(_csv_line([*prefix, "", "", "", "", meta, "", "", "false", ""]))
     return lines
 
 
@@ -214,18 +223,44 @@ def _location(reference: str) -> str:
     return _JS_WHITESPACE_RUN.sub(" ", js_trim(reference))
 
 
+def _group_names(rule_groups: tuple[str, ...]) -> list[str]:
+    names = (_JS_WHITESPACE_RUN.sub(" ", js_trim(name)) for name in rule_groups)
+    return [name for name in names if name]
+
+
+def _group_cell(rule_groups: tuple[str, ...]) -> str:
+    """The CSV ``rule_group`` cell: group names joined with ``; `` (005 Decision 9)."""
+
+    return "; ".join(_group_names(rule_groups))
+
+
+def _rule_label(rule_id: str, rule_groups: tuple[str, ...]) -> str:
+    """``Kural01 (Güvenlik, Performans)``; an ungrouped rule stays ``Kural01`` (Requirement 8)."""
+
+    names = _group_names(rule_groups)
+    return f"{rule_id} ({', '.join(names)})" if names else rule_id
+
+
 def _comment_items(item: ExportObject) -> list[tuple[str, str, str]]:
     """(rule, raw line reference, note) lines of one object; false positives never appear."""
 
     lines = [
-        (finding.rule_id, _location(finding.line_reference), _note(finding.description))
+        (
+            _rule_label(finding.rule_id, finding.rule_groups),
+            _location(finding.line_reference),
+            _note(finding.description),
+        )
         for finding in item.findings
         if not finding.false_positive
     ]
     if lines:
         return lines
     return [
-        (result.rule_id, _location(result.line_reference), _note(result.description))
+        (
+            _rule_label(result.rule_id, result.rule_groups),
+            _location(result.line_reference),
+            _note(result.description),
+        )
         for result in item.rule_results
         if result.status.strip().upper() == "FAIL" and not _fail_rule_marked(item, result)
     ]

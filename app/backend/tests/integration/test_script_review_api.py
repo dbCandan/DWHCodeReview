@@ -82,6 +82,10 @@ async def test_a_script_review_never_touches_sql_server_and_stores_the_text(
         "kind": "script",
         "rule_version": version,
         "objects_total": 1,
+        # rule-group-selection: no group was selected, so the run uses every rule.
+        "selected_rule_groups": [],
+        "selected_rule_codes": [],
+        "all_rules": True,
     }
     phases = [event["phase"] for event in events if event["phase"] != "llm_stream"]
     assert phases[:4] == ["run_started", "object_start", "sql_ready", "rules_batch_start"]

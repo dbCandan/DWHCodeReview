@@ -8,11 +8,28 @@ export type UserPage = Schemas['UserPage'];
 export type ApplicationRole = Schemas['RoleChange']['role'];
 
 export type RuleItem = Schemas['RuleItem'];
+export type RuleGroupItem = Schemas['RuleGroupItem'];
+export type SelectedRuleGroup = Schemas['SelectedRuleGroup'];
 export type RuleSetWorkspace = Schemas['RuleSetWorkspace'];
 export type RuleSetDraftUpdate = Schemas['RuleSetDraftUpdate'];
 export type RuleSetVersionSummary = Schemas['RuleSetVersionSummary'];
 export type RuleSetVersionDetail = Schemas['RuleSetVersionDetail'];
 export type RuleSetVersionPage = Schemas['RuleSetVersionPage'];
+
+export type RuleProposalCapabilities = Schemas['RuleProposalCapabilities'];
+export type RuleProposalCreate = Schemas['RuleProposalCreate'];
+export type RuleProposalItem = Schemas['RuleProposalItem'];
+export type RuleProposalDetail = Schemas['RuleProposalDetail'];
+export type RuleProposalPage = Schemas['RuleProposalPage'];
+export type RuleProposalStatus = Schemas['RuleProposalItem']['status'];
+export type PublishRequestItem = Schemas['PublishRequestItem'];
+export type PublishRequestDetail = Schemas['PublishRequestDetail'];
+export type PublishRequestPage = Schemas['PublishRequestPage'];
+export type PublishRequestStatus = Schemas['PublishRequestItem']['status'];
+export type RuleSetDiffView = Schemas['RuleSetDiffView'];
+export type DiffRuleItem = Schemas['DiffRuleItem'];
+export type RuleProposerItem = Schemas['RuleProposerItem'];
+export type RuleProposerList = Schemas['RuleProposerList'];
 
 export type SqlConnectionView = Schemas['SqlConnectionView'];
 export type SqlConnectionChange = Schemas['SqlConnectionChange'];
@@ -41,3 +58,14 @@ export type ReviewRunDetail = Schemas['ReviewRunDetail'];
 export type ReviewRunPage = Schemas['ReviewRunPage'];
 export type FalsePositiveState = Schemas['FalsePositiveState'];
 export type DeletedRuns = Schemas['DeletedRuns'];
+
+export type ScheduledReviewItem = Schemas['ScheduledReviewItem'];
+export type ScheduledReviewDetail = Schemas['ScheduledReviewDetail'];
+export type ScheduledReviewPage = Schemas['ScheduledReviewPage'];
+export type ScheduledReviewWrite = Schemas['ScheduledReviewWrite'];
+export type ScheduledObjectSelection = Schemas['ObjectSelection'];
+export type SchedulePeriod = Schemas['SchedulePeriod'];
+export type ScheduledRunItem = Schemas['ScheduledRunItem'];
+export type ScheduledRunPage = Schemas['ScheduledRunPage'];
+export type ScheduledRunQueued = Schemas['ScheduledRunQueued'];
+export type ScheduledReviewSettings = Schemas['ScheduledReviewSettings'];

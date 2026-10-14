@@ -1,5 +1,6 @@
 import {apiRequest} from '@/lib/apiClient';
 import type {
+  RuleGroupItem,
   RuleItem,
   RuleSetVersionDetail,
   RuleSetVersionPage,
@@ -11,10 +12,15 @@ export const RuleSetService = {
   workspace(signal?: AbortSignal): Promise<RuleSetWorkspace> {
     return apiRequest<RuleSetWorkspace>('/rule-set', {signal});
   },
-  saveDraft(baseRevision: number, critical: RuleItem[], normal: RuleItem[]): Promise<RuleSetWorkspace> {
+  saveDraft(
+    baseRevision: number,
+    critical: RuleItem[],
+    normal: RuleItem[],
+    groups: RuleGroupItem[],
+  ): Promise<RuleSetWorkspace> {
     return apiRequest<RuleSetWorkspace>('/rule-set/draft', {
       method: 'PUT',
-      body: JSON.stringify({base_revision: baseRevision, critical, normal}),
+      body: JSON.stringify({base_revision: baseRevision, critical, normal, groups}),
     });
   },
   publish(baseRevision: number): Promise<RuleSetVersionDetail> {

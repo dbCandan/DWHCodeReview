@@ -37,21 +37,12 @@ describe('user administration page', () => {
     const table = await screen.findByRole('table');
     const adminRow = within(table).getByText('admin').closest('tr')!;
     expect(within(adminRow).getByText('Süper yönetici')).toBeInTheDocument();
-    expect(within(adminRow).queryByRole('combobox')).toBeNull();
     expect(within(adminRow).queryByRole('button')).toBeNull();
-    expect(screen.getByRole('combobox', {name: 'ayse.kaya@kurum.local rolü'})).toHaveValue('inceleyici');
+    // directory-login Decision 14: everyone else is a user; there is no role to choose.
+    const userRow = within(table).getByText('Ayşe Kaya').closest('tr')!;
+    expect(within(userRow).getByText('Kullanıcı')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).toBeNull();
     expect(screen.getByText('Kurum dizini')).toBeInTheDocument();
-  });
-
-  it('changes the role and reports it', async () => {
-    const setRole = vi.spyOn(UserAdminService, 'setRole').mockResolvedValue({role: 'kural-yoneticisi'});
-    renderWithSession(<UserAdministrationPage />, {role: 'super_admin', user: admin});
-    fireEvent.change(await screen.findByRole('combobox', {name: 'ayse.kaya@kurum.local rolü'}), {
-      target: {value: 'kural-yoneticisi'},
-    });
-    expect(await screen.findByText('ayse.kaya@kurum.local için rol “Kural yöneticisi” oldu.')).toBeInTheDocument();
-    expect(setRole).toHaveBeenCalledWith(users[1], 'kural-yoneticisi');
-    expect(screen.getByRole('combobox', {name: 'ayse.kaya@kurum.local rolü'})).toHaveValue('kural-yoneticisi');
   });
 
   it('deactivates and reactivates an account', async () => {
@@ -68,11 +59,9 @@ describe('user administration page', () => {
   });
 
   it('shows the backend refusal message', async () => {
-    vi.spyOn(UserAdminService, 'setRole').mockRejectedValue(apiError(409, 'super_admin_protected'));
+    vi.spyOn(UserAdminService, 'setActive').mockRejectedValue(apiError(409, 'super_admin_protected'));
     renderWithSession(<UserAdministrationPage />, {role: 'super_admin', user: admin});
-    fireEvent.change(await screen.findByRole('combobox', {name: 'ayse.kaya@kurum.local rolü'}), {
-      target: {value: 'kural-yoneticisi'},
-    });
+    fireEvent.click(await screen.findByRole('button', {name: 'ayse.kaya@kurum.local hesabını pasifleştir'}));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Süper yönetici hesabının rolü ve durumu bu ekrandan değiştirilemez.',
     );

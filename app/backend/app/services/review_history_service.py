@@ -15,6 +15,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -29,7 +30,6 @@ from app.domain.models.review import (
     ReviewRunKind,
     ReviewRunStatus,
 )
-from app.domain.models.role import ROLE_RULE_MANAGER
 from app.domain.models.user import User
 from app.domain.review import SCRIPT_DEFAULT_LABEL
 from app.infrastructure.repositories.review_repository import (
@@ -49,6 +49,7 @@ from app.schemas.review_runs.contracts import (
     ReviewRunDetail,
     ReviewRunPage,
     ReviewRunSummary,
+    RunCancelled,
 )
 from app.schemas.reviews.contracts import FindingItem, ObjectResultItem, RuleResultItem
 from app.services.request_scope import acting_user, active_tenant
@@ -61,6 +62,9 @@ from app.services.review_export import (
     results_csv_header,
     results_csv_rows,
 )
+
+if TYPE_CHECKING:
+    from app.services.review_run_service import ReviewRunRegistry
 
 logger = logging.getLogger("app.review_history")
 
@@ -176,7 +180,7 @@ def _finding_item(finding: ReviewFinding) -> FindingItem:
     )
 
 
-def _object_results(results: RunResults) -> list[ObjectResultItem]:
+def _object_results(results: RunResults, *, with_sql: bool = False) -> list[ObjectResultItem]:
     items: list[ObjectResultItem] = []
     for item in results.objects:
         rule_results = results.rule_results.get(item.review_run_object_id, [])
@@ -196,6 +200,7 @@ def _object_results(results: RunResults) -> list[ObjectResultItem]:
                     for result in rule_results
                     for finding in results.findings.get(result.review_rule_result_id, [])
                 ],
+                source_sql=item.source_sql if with_sql else None,
             )
         )
     return items
@@ -283,7 +288,7 @@ class ReviewHistoryService:
         row = await self.reviews.get_run(tenant_id, run_id)
         if row is None:
             raise _not_found()
-        if row.run.owner_user_id == actor.user_id or context.has_role(ROLE_RULE_MANAGER):
+        if row.run.owner_user_id == actor.user_id or context.is_super_admin:
             return row, actor
         if (
             recipient_reads
@@ -305,11 +310,11 @@ class ReviewHistoryService:
         self, context: RequestContext, *, scope: str, page: int, page_size: int
     ) -> ReviewRunPage:
         tenant_id, actor = await self._caller(context)
-        if scope == "all" and not context.has_role(ROLE_RULE_MANAGER):
+        if scope == "all" and not context.is_super_admin:
             raise ApplicationError(
                 status.HTTP_403_FORBIDDEN,
                 "review_scope_forbidden",
-                "Tüm koşumları yalnız kural yöneticisi görebilir.",
+                "Tüm koşumları yalnız süper yönetici görebilir.",
             )
         rows, total = await self.reviews.list_runs(
             tenant_id,
@@ -334,17 +339,31 @@ class ReviewHistoryService:
         return (await self.reviews.headings_of_runs([row.run.review_run_id]))[row.run.review_run_id]
 
     async def detail(
-        self, context: RequestContext, run_id: str, *, page: int, page_size: int
+        self,
+        context: RequestContext,
+        run_id: str,
+        *,
+        page: int,
+        page_size: int,
+        with_sql: bool = False,
     ) -> ReviewRunDetail:
-        """One page of the stored objects of a run, in selection order (Requirement 3)."""
+        """One page of the stored objects of a run, in selection order (Requirement 3).
+
+        ``with_sql`` adds each object's reviewed SQL for the code view (Requirement 13); whoever
+        may read the run may download the same text as the SQL export.
+        """
 
         row, actor = await self._visible(context, run_id, recipient_reads=True)
         completed = row.run.status == ReviewRunStatus.COMPLETED.value
         results = (
             _object_results(
                 await self.reviews.results_of_run(
-                    row.run.review_run_id, offset=(page - 1) * page_size, limit=page_size
-                )
+                    row.run.review_run_id,
+                    offset=(page - 1) * page_size,
+                    limit=page_size,
+                    with_sql=with_sql,
+                ),
+                with_sql=with_sql,
             )
             if completed
             else []
@@ -438,6 +457,41 @@ class ReviewHistoryService:
             count=1,
             user_public_id=actor.public_id,
         )
+
+    async def cancel_run(
+        self, context: RequestContext, run_id: str, registry: "ReviewRunRegistry"
+    ) -> RunCancelled:
+        """ "Analizi durdur" by request: the owner or the super admin stops a running run.
+
+        The stream closing stops a run as well; this request does not depend on a proxy passing
+        that close on. Without a task in this process the run is ended as cancelled directly.
+        """
+
+        row, actor = await self._visible(context, run_id)
+        if row.run.owner_user_id != actor.user_id and not context.is_super_admin:
+            raise _not_owner()
+        if row.run.status != ReviewRunStatus.RUNNING.value:
+            raise ApplicationError(
+                status.HTTP_409_CONFLICT,
+                "review_run_not_running",
+                "Bu inceleme zaten bitmiş.",
+            )
+        outcome: Literal["cancelling", "cancelled"] = "cancelling"
+        if not registry.cancel(row.run.public_id):
+            await self.reviews.finish_run(
+                row.run.review_run_id,
+                status=ReviewRunStatus.CANCELLED,
+                finished_at=datetime.now(UTC),
+            )
+            outcome = "cancelled"
+        log_event(
+            logger,
+            "review_run.cancel_requested",
+            run_id=row.run.public_id,
+            outcome=outcome,
+            user_public_id=actor.public_id,
+        )
+        return RunCancelled(id=row.run.public_id, status=outcome)
 
     async def delete_own_runs(self, context: RequestContext) -> DeletedRuns:
         tenant_id, actor = await self._caller(context)

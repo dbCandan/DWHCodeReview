@@ -284,7 +284,7 @@ async def _local_user(role: str) -> tuple[str, str]:
 async def test_nonprod_local_password_login_is_only_for_the_super_admin(
     auth: AuthHarness, super_admin: SuperAdmin
 ) -> None:
-    name, password = await _local_user("kural-yoneticisi")
+    name, password = await _local_user("inceleyici")
 
     refused = await auth.login(name, password)
     admitted = await auth.login(super_admin.username, super_admin.password)
@@ -300,12 +300,12 @@ async def test_nonprod_local_password_login_is_only_for_the_super_admin(
 
 async def test_local_environment_admits_every_local_account(auth: AuthHarness) -> None:
     auth.use_settings(environment="development", directory_enabled=False)
-    name, password = await _local_user("kural-yoneticisi")
+    name, password = await _local_user("inceleyici")
 
     response = await auth.login(name, password)
 
     assert response.status_code == 200, response.text
-    assert response.json()["user"]["role"] == "kural-yoneticisi"
+    assert response.json()["user"]["role"] == "inceleyici"
     unknown = await auth.login(f"yok-{uuid4().hex[:6]}", password)
     assert unknown.status_code == 401
     assert auth.directory.calls == []

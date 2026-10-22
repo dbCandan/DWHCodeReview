@@ -1,6 +1,7 @@
 import type {ReactNode} from 'react';
 import {Alert} from './Alert';
 import {Button} from './Button';
+import {Icon, type IconName} from './Icon';
 
 export function LoadingState({label = 'Yükleniyor…'}: {label?: string}) {
   return (
@@ -10,9 +11,14 @@ export function LoadingState({label = 'Yükleniyor…'}: {label?: string}) {
   );
 }
 
-export function EmptyState({title, children}: {title: string; children?: ReactNode}) {
+export function EmptyState({title, icon, children}: {title: string; icon?: IconName; children?: ReactNode}) {
   return (
     <div className="state">
+      {icon !== undefined && (
+        <span className="state-icon">
+          <Icon name={icon} />
+        </span>
+      )}
       <p className="state-title">{title}</p>
       {children !== undefined && <div className="state-body">{children}</div>}
     </div>

@@ -12,4 +12,4 @@ Her satır bağımsız teslim edilebilir bir yeteneği kabul edilmiş PRD'sine b
 | 006 | llm-connection | [PRD](PRDs/006-llm-connection/PRD.md) | Accepted |
 | 007 | rule-group-selection | [PRD](PRDs/007-rule-group-selection/PRD.md) | Accepted |
 | 008 | scheduled-review-email | [PRD](PRDs/008-scheduled-review-email/PRD.md) | Accepted |
-| 009 | rule-proposals | [PRD](PRDs/009-rule-proposals/PRD.md) | Accepted |
+| 009 | rule-proposals (2.0.0: kaldırıldı, Decision 8) | [PRD](PRDs/009-rule-proposals/PRD.md) | Accepted |

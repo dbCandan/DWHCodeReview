@@ -156,7 +156,7 @@ scripts/stack.sh up -d --build --wait
 scripts/db.sh apply
 scripts/create-super-admin.sh
 scripts/create-local-user.sh --role inceleyici        # dizin kapalıyken yerel test hesabı
-scripts/create-local-user.sh --role kural-yoneticisi
+scripts/create-local-user.sh --role inceleyici
 scripts/quality-gate.sh all
 export KT_SCAFFOLD_OFFLINE_BUNDLE=/approved/bundles/<platform-matrix>
 export KT_SCAFFOLD_OFFLINE_BUNDLE_SHA256=<bank-admission-sha256-of-SHA256SUMS>

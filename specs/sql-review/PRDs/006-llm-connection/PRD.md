@@ -11,6 +11,8 @@ Domain: [sql-review](../../DOMAIN.md)
 Kabul kaydı: Proje sahibi bu PRD'yi 2026-09-27'de, açık sorulardaki önerileri ve sahip kararlarını
 benimseyerek kabul etti.
 
+**1.x revizyon notu (2026-10-15):** [directory-login](../../../application-foundation/PRDs/001-directory-login/PRD.md) 1.3.0 Decision 14 ile `kural-yoneticisi` rolü kaldırıldı; kullanıcılar `inceleyici` (arayüzde "Kullanıcı") ve süper yöneticidir. Bu belgede kural yöneticisine verilen yetkiler (taslağı düzenleme ve yayımlama, bağlantı ayarları, LLM çağrı özetleri, tüm incelemeleri görme) süper yöneticidedir; "inceleyici" geçen yerler her kullanıcıyı anlatır.
+
 ## Amaç
 
 İnceleme isteklerinin yalnız onaylı kurum içi LLM (büyük dil modeli) sunucusuna, kurum ağı politikası, kurum CA'sıyla doğrulanan TLS (şifreli bağlantı), süre sınırı, sınırlı yeniden deneme, **İnceleme koşumu** başına ve süreç geneli eşzamanlılık sınırıyla gitmesi. Her çağrı için yalnız **LLM çağrı özeti** PostgreSQL'de saklanır; ham SQL metni ve ham LLM yanıtı hiçbir loga ve kayda yazılmaz. LLM bağlantı ayarı **Ortam** `local` iken arayüzden düzenlenebilir, `nonprod` iken yalnız dağıtımdan gelir.

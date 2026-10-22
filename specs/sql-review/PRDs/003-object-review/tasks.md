@@ -85,3 +85,10 @@ Task 11'dedir.
 - [ ] Task 11 — Acceptance 7: gerçek SQL Server ve onaylı LLM ucuyla tarayıcıda 50'den çok nesnelik
   koşum, backend belleğinin gözlenmesi ve küme ingress'inin istek gövdesi sınırının doğrulanması;
   açık.
+
+## 1.3.0 revizyonu (2026-10-15)
+
+- [x] T-R15.1 Requirement 15, Decision 9: `POST /review-runs/{id}/cancel`; `ReviewRunRegistry` koşum kimliğiyle görevi bulur ve iptal eder; görevi olmayan koşum doğrudan "iptal edildi" olur; olay okuyucusu koşum bitince hemen kapanır.
+- [x] T-R15.2 Acceptance 6 (L1 kısmı): `tests/integration/test_review_cancel_api.py`.
+- [x] T-R15.3 Ön yüz: "Analizi durdur" önce durdurma isteği gönderir, "Durduruluyor…" ve sunucu onayını gösterir; Vitest ve e2e 02.
+- [x] T-R15.4 Nesne incelemesi tek ekran: nesneler solda, kural seçimi ve başlat düğmesi sağ panelde; sayfa kaydırması yok.

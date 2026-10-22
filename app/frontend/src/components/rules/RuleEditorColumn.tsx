@@ -119,7 +119,7 @@ function RuleRow({
               </Badge>
             ))}
           </span>
-          <span className="grow subtle">{rule.summary?.trim() ? displaySummary(rule) : previewText(rule.text)}</span>
+          <span className="grow subtle clamp-2">{previewText(displaySummary(rule) || rule.text)}</span>
         </button>
       </li>
     );

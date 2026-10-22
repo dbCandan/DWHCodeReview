@@ -49,3 +49,7 @@ Yerel kanıt (2026-10-14, kişisel makine): `pytest` (gerçek PostgreSQL 17) 848
 
 Kalite kapıları, yönetilen inceleme ve proje kancaları yalnız kurumsal ortamda, proje kökünde açılan
 oturumda çalışır. Bu görevlerin L1/L2 kanıtı oradan alınmalıdır.
+
+## Arayüz düzeltmesi (2026-10-15)
+
+- [x] Requirement 8: inceleme ekranındaki kural seçici grupları alt alta listeler; grubun kutusu tüm kurallarını seçer, grup açılınca kuralları altında tek tek seçilir; arama eşleşenleri tek listede gösterir (Vitest, e2e 04).

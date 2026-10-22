@@ -9,7 +9,7 @@ import type {
   SqlConnectionView,
 } from '@/types/sqlReview';
 
-/** SQL Server and LLM connection settings and LLM call summaries (rule manager only). */
+/** SQL Server and LLM connection settings and LLM call summaries (super admin only). */
 export const ConnectionService = {
   sql(signal?: AbortSignal): Promise<SqlConnectionView> {
     return apiRequest<SqlConnectionView>('/sql-connection', {signal});

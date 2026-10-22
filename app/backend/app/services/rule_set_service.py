@@ -2,8 +2,8 @@
 
 sql-review/PRDs/001-rule-management Requirement 1-8, 12. Save and publish lock the tenant draft
 row, so concurrent requests serialize: a stale ``base_revision`` receives 409 and two publishes of
-the same draft produce one version. Only the super admin publishes directly; every other publish
-goes through an approval of sql-review/PRDs/009-rule-proposals, which uses ``publish_rules``.
+the same draft produce one version. Only the super admin edits the draft and publishes it
+(directory-login Decision 14; rule-proposals Decision 8 retired the proposals).
 Rule text, summaries and draft content are never logged.
 """
 
@@ -213,14 +213,8 @@ class RuleSetService:
         return await self._workspace(tenant)
 
     async def publish(self, context: RequestContext, *, base_revision: int) -> PublishOutcome:
-        """Direct publish of the draft; only the super admin (rule-proposals Decision 3)."""
+        """Publish the draft; the route admits only the super admin (directory-login Decision 14)."""
 
-        if not context.is_super_admin:
-            raise ApplicationError(
-                status.HTTP_403_FORBIDDEN,
-                "publish_requires_approval",
-                "Taslak süper yönetici onayıyla yayımlanır; taslağı onaya gönderin.",
-            )
         tenant = await active_tenant(self.users, context)
         actor = await acting_user(self.users, context)
         draft = await self.rules.lock_draft(tenant.tenant_id, actor_user_id=actor.user_id)

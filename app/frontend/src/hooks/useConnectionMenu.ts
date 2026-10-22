@@ -3,7 +3,7 @@ import {ConnectionService} from '@/services/connections';
 
 /**
  * Whether the SQL and LLM connection pages belong in the menu: only when the backend reports the
- * settings editable for this user. That is the rule manager in `local`; in `nonprod` only the
+ * settings editable for this user. That is the super admin in `local`; in `nonprod` only the
  * super admin, and only for a SQL connection the deployment does not supply
  * (sql-server-connection Requirement 5, llm-connection Requirement 13).
  */

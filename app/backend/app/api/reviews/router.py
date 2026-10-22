@@ -32,7 +32,7 @@ from app.core.config import Settings, get_settings
 from app.core.review_throttle import ReviewRateLimiter
 from app.db.session import async_session_factory, get_db
 from app.domain.llm import LlmChatPort, LlmEndpoint
-from app.domain.models.role import ROLE_REVIEWER, ROLE_RULE_MANAGER
+from app.domain.models.role import ROLE_REVIEWER
 from app.domain.review import ObjectSelection
 from app.domain.sql_server import SqlCatalogPort
 from app.schemas.reviews.contracts import (
@@ -77,7 +77,7 @@ _CATALOG_ERRORS: dict[int | str, dict[str, object]] = {
     504: {"description": "SQL Server zaman aşımı"},
 }
 
-ReviewRoles = [Depends(require_any_role(ROLE_REVIEWER, ROLE_RULE_MANAGER))]
+ReviewRoles = [Depends(require_any_role(ROLE_REVIEWER))]
 
 catalog_router = APIRouter(
     tags=["catalog"],

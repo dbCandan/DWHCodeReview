@@ -22,7 +22,7 @@ import type {SqlConnectionChange, SqlConnectionTestResult, SqlConnectionView} fr
 
 /**
  * SQL Server connection settings (sql-review sql-server-connection Requirement 3–5, 9, 10).
- * Editable only when the backend says so: the rule manager in `local` (this process only), the
+ * Editable only when the backend says so: the super admin in `local` (this process only), the
  * super admin in a `nonprod` whose deployment supplies no connection (saved in the application).
  * Otherwise a read-only status.
  */

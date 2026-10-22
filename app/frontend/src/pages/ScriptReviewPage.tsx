@@ -3,7 +3,6 @@ import {RuleSelectionPicker} from '@/components/review/RuleSelectionPicker';
 import {LastReviewBanner} from '@/components/review/LastReviewBanner';
 import {Alert} from '@/components/ui/Alert';
 import {Button} from '@/components/ui/Button';
-import {Card} from '@/components/ui/Card';
 import {PageHeader} from '@/components/ui/PageHeader';
 import {useReviewSession} from '@/contexts/ReviewSessionContext';
 
@@ -33,39 +32,26 @@ export default function ScriptReviewPage() {
   }
 
   return (
-    <div className="page">
+    <form className="page page-fill" onSubmit={submit}>
       <PageHeader
         title="SQL betiği incelemesi"
-        description="Veritabanından nesne seçmeden elinizdeki SQL metnini yapıştırın; yayımlanmış kurallara göre inceleyin. Sonuçlar açılır pencerede gösterilir."
+        description="SQL metnini yapıştırın; kuralları sağdan seçip inceleyin. Sonuçlar açılır pencerede gösterilir."
       />
       <LastReviewBanner kind="script" />
-      <Card title="SQL betiği">
-        <form className="stack" onSubmit={submit}>
-          <div className="field">
-            <label className="field-label" htmlFor="script-label">
-              Sonuçlarda görünecek ad (isteğe bağlı)
-            </label>
-            <input
-              id="script-label"
-              className="input"
-              value={label}
-              maxLength={LABEL_LIMIT}
-              disabled={running}
-              placeholder="Örn. staging_load_customer"
-              onChange={(event) => setLabel(event.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor="script-sql">
-              SQL
-            </label>
+      <div className="workspace">
+        <section className="pane" aria-label="Betik düzenleyici">
+          <div className="pane-head">
             <Alert tone="warning">
               <p id="script-note">{DATA_NOTE}</p>
             </Alert>
+          </div>
+          <div className="pane-body pane-editor">
+            <label className="sr-only" htmlFor="script-sql">
+              SQL
+            </label>
             <textarea
               id="script-sql"
-              className="textarea"
-              rows={18}
+              className="textarea editor"
               value={sql}
               disabled={running}
               spellCheck={false}
@@ -74,7 +60,9 @@ export default function ScriptReviewPage() {
               aria-describedby="script-note script-counter"
               onChange={(event) => setSql(event.target.value)}
             />
-            <p id="script-counter" className={`counter${tooLong ? ' is-over' : ''}`} aria-live="polite">
+          </div>
+          <div className="pane-foot row">
+            <p id="script-counter" className={`counter grow${tooLong ? ' is-over' : ''}`} aria-live="polite">
               {length === 0
                 ? 'Metin yok'
                 : `${length.toLocaleString('tr-TR')} / ${SQL_TEXT_LIMIT.toLocaleString('tr-TR')} karakter`}
@@ -85,15 +73,36 @@ export default function ScriptReviewPage() {
               </p>
             )}
           </div>
-          <RuleSelectionPicker value={ruleCodes} disabled={running} onChange={setRuleCodes} />
-          <div className="row">
-            <Button type="submit" variant="primary" disabled={!canSubmit}>
+        </section>
+
+        <aside className="pane pane-side" aria-label="İnceleme ayarları">
+          <div className="pane-head">
+            <div className="field">
+              <label className="field-label" htmlFor="script-label">
+                Sonuçlarda görünecek ad (isteğe bağlı)
+              </label>
+              <input
+                id="script-label"
+                className="input"
+                value={label}
+                maxLength={LABEL_LIMIT}
+                disabled={running}
+                placeholder="Örn. staging_load_customer"
+                onChange={(event) => setLabel(event.target.value)}
+              />
+            </div>
+          </div>
+          <div className="pane-body">
+            <RuleSelectionPicker plain value={ruleCodes} disabled={running} onChange={setRuleCodes} />
+          </div>
+          <div className="pane-foot stack-tight">
+            <Button type="submit" variant="primary" className="btn-block btn-lg" disabled={!canSubmit}>
               {running ? 'İnceleniyor…' : 'Kurallara göre incele'}
             </Button>
             {running && <span className="subtle">LLM yanıtı bekleniyor…</span>}
           </div>
-        </form>
-      </Card>
-    </div>
+        </aside>
+      </div>
+    </form>
   );
 }

@@ -30,7 +30,7 @@ async def test_permission_guard_denies_missing_permission() -> None:
 
 @pytest.mark.asyncio
 async def test_super_admin_guard_denies_ordinary_users() -> None:
-    context = RequestContext(subject=uuid4(), roles=frozenset({"kural-yoneticisi"}))
+    context = RequestContext(subject=uuid4(), roles=frozenset({"inceleyici"}))
     with pytest.raises(ApplicationError) as error:
         await require_super_admin()(context)
     assert error.value.status_code == 403

@@ -1,8 +1,8 @@
-"""Rule and group proposals, publish requests and the proposal permission.
+"""Rule and group proposals, publish requests and the proposal permission (retired).
 
-sql-review/PRDs/009-rule-proposals owns these tables. Every published rule-set change passes the
-super admin: an approved proposal or publish request becomes a version in the same transaction.
-Proposal texts, summaries, group names and reasons are never logged.
+sql-review/PRDs/009-rule-proposals Decision 8 removed the proposals: no route reads or writes
+these tables any more. They stay in place so earlier records are not dropped silently
+(rules/41); the mapping keeps the schema check aligned with the migrations.
 """
 
 from datetime import datetime

@@ -1,8 +1,8 @@
 import {classes} from '@/lib/utils';
 
 /**
- * The product mark: a reviewed data-warehouse table (a database drum with a check) on the corporate
- * green tile. Decorative; the product name beside it is the accessible name.
+ * The product mark: a reviewed data-warehouse table (a database drum with a check) on the brand
+ * tile. Decorative; the product name beside it is the accessible name.
  */
 export function BrandMark({className}: {className?: string}) {
   return (

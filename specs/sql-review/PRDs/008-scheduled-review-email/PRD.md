@@ -2,16 +2,23 @@
 
 Status: Accepted
 
-Version: 1.1.0
+Version: 1.3.0
 
-Acceptance date: 2026-10-14
+Acceptance date: 2026-10-15
 
 Domain: [sql-review](../../DOMAIN.md)
 
 Kabul kaydı: Proje sahibi bu PRD'yi 2026-10-14'te Decision 1–12 ile kabul etti. Alıcıların rapor
 erişimi [review-history-export](../005-review-history-export/PRD.md) 1.3.0 Decision 8'dedir
 (Decision 12). Bu PRD yeni bir yürütme modeli (arka uç içi zamanlanmış modül) ve yeni bir harici sınır
-(kurumsal SMTP) getirir; ikisi [DOMAIN.md](../../DOMAIN.md) belgesindedir.
+(kurumsal SMTP) getirir; ikisi [DOMAIN.md](../../DOMAIN.md) belgesindedir. 1.2.0 revizyonu
+(Requirement 10, Decision 13–14: e-posta durumu ve deneme e-postası) proje sahibinin 2026-10-15
+"mail atmıyor" bildirimi ve tasarımı geliştiriciye bırakan yetkisiyle eklendi; proje sahibi
+reddederse bu revizyon geri alınır. Proje sahibi 1.2.0'ı 2026-10-15'te onayladı. 1.3.0 revizyonunu
+(Requirement 11, Decision 15: zamanlanmış koşumu durdurma) proje sahibi 2026-10-15'te "zamanlanmış
+incelemeler kısmında durduramıyorum" bildirimiyle kabul etti.
+
+**1.x revizyon notu (2026-10-15):** [directory-login](../../../application-foundation/PRDs/001-directory-login/PRD.md) 1.3.0 Decision 14 ile `kural-yoneticisi` rolü kaldırıldı; kullanıcılar `inceleyici` (arayüzde "Kullanıcı") ve süper yöneticidir. Bu belgede kural yöneticisine verilen yetkiler (taslağı düzenleme ve yayımlama, bağlantı ayarları, LLM çağrı özetleri, tüm incelemeleri görme) süper yöneticidedir; "inceleyici" geçen yerler her kullanıcıyı anlatır.
 
 ## Amaç
 
@@ -119,6 +126,18 @@ Süper yöneticiye ayrıca bütün kullanıcıların tanımları, "Şimdi çalı
 "Aynı anda çalışacak zamanlanmış koşum" alanı görünür. Alıcı adresi izinli alan adı dışındaysa veya
 biçimsizse form `422` gösterir. Tüm metinler Türkçedir.
 
+Requirement 10: Süper yönetici Yönetim ekranında özet e-postanın bu ortamdan çıkıp çıkamayacağını görür:
+zamanlayıcının açık olup olmadığı, SMTP sunucusunun yapılandırılıp yapılandırılmadığı, şifreleme biçimi
+ve izinli alıcı alan adları. Tek bir kurum adresine (izinli alan adı kuralı Decision 5 ile aynı) kısa bir
+**deneme e-postası** gönderir; sonuç "gönderildi", "SMTP yapılandırılmadı" ya da özet e-postayla aynı
+kararlı hata koduyla "gönderilemedi" olarak görünür (Decision 13, 14). Deneme e-postası rapor verisi,
+SQL veya bulgu taşımaz.
+
+Requirement 11: Tanım sahibi ve süper yönetici, tanımın sırada bekleyen veya süren koşumunu "Durdur" ile
+bitirir: sıradaki koşum hemen "iptal edildi" olur; süren koşum "Analizi durdur" gibi kesilir
+([object-review](../003-object-review/PRD.md) Decision 9) ve "iptal edildi" olarak saklanır. Durdurulan
+koşum için özet e-posta gitmez; tanım etkin kalır ve sonraki periyotta yeniden çalışır (Decision 15).
+
 ## API sözleşmesi
 
 Ön ek `/api/dwhcodereview/v1`. Tüm uçlar geçerli oturum ister; hata zarfı
@@ -139,6 +158,15 @@ biçimsizse form `422` gösterir. Tüm metinler Türkçedir.
   rapor review-history-export uçlarıyla açılır.
 - `GET /scheduled-review-settings` / `PUT /scheduled-review-settings` → `max_concurrent_runs` (1–10);
   yalnız süper yönetici. Aralık dışı değer `422 setting_out_of_range`.
+- `GET /scheduled-review-settings/email` → `scheduler_enabled`, `smtp_configured`, `smtp_security`,
+  `allowed_domains`, `suggested_recipient` (çağıranın adresi izinli alan adındaysa, değilse `null`);
+  yalnız süper yönetici (Requirement 10).
+- `POST /scheduled-review-settings/email/test` `{recipient}` → `{status: sent|failed|not_configured,
+  error_code}`; yalnız süper yönetici. Alıcı hataları `422 recipient_invalid` /
+  `recipient_domain_not_allowed`; bekleme süresi dolmadan ikinci deneme `429 email_test_too_soon`
+  (Decision 14).
+- `POST /scheduled-reviews/{id}/stop` → `{id, state: cancelling|cancelled}` (202); yalnız sahip ve süper
+  yönetici. Bekleyen veya süren koşum yoksa `409 scheduled_review_not_running` (Requirement 11).
 - Tanımı yalnız sahibi ve süper yönetici görür; tanımı başka kullanıcılarla paylaşma yoktur (Decision 11).
 - İç tetikleme (zamanlayıcı → koşum) dış uç değildir; HTTP yüzeyine çıkmaz.
 
@@ -174,7 +202,9 @@ biçimsizse form `422` gösterir. Tüm metinler Türkçedir.
   `public_id`), `scheduled_review.triggered` (tanım, koşum `public_id`), `scheduled_review.skipped`
   (neden: önceki sürüyor / yayımlanmış kural yok / SMTP yok), `scheduled_review.missed`,
   `scheduled_review.manual_run` (tetikleyen kullanıcı `public_id`), `scheduled_review.settings_changed`
-  (yeni sınır), `scheduled_review.email_sent` / `email_failed` (alıcı sayısı; adres yazılmaz). Ad, SQL
+  (yeni sınır), `scheduled_review.email_sent` / `email_failed` (alıcı sayısı; adres yazılmaz),
+  `scheduled_review.email_test` (kullanıcı `public_id`, sonuç, hata kodu; adres yazılmaz),
+  `scheduled_review.stopped` (tanım, koşum kaydı ve kullanıcı `public_id`, sonuç). Ad, SQL
   metni ve bulgu içeriği loga girmez.
 - Yeni ölçüm eklenmez (Decision 10); mevcut koşum ölçümleri değişmez.
 - İz: tetikleme → koşum → e-posta aralıkları; adres ve içerik özniteliğe girmez (application-foundation
@@ -234,6 +264,12 @@ biçimsizse form `422` gösterir. Tüm metinler Türkçedir.
   test SMTP'siyle bir tanım oluşturulur, kısa bir periyotta arka planda çalışır, rapor saklanır ve
   alıcıya özet e-posta ulaşır; e-postada kod parçası bulunmaz; rapor bağlantısı oturumla açılır
   (Requirement 1–6, 9).
+- [ ] Acceptance 5: L1 — Otomatik testlerden geçti: e-posta durumu ve deneme e-postası yalnız süper
+  yöneticiye açıktır; SMTP yokken "yapılandırılmadı" döner; deneme sahte SMTP'ye doğrulanmış TLS ile tek
+  kurum adresine gider ve rapor verisi taşımaz; ulaşılamayan sunucu kararlı kodla döner; adres loga
+  girmez (Requirement 10).
+- [ ] Acceptance 6: L1 — Otomatik testlerden geçti: sahip sıradaki koşumu durdurur, başkası `404`, koşum
+  yokken `409`; durdurulan koşum "iptal edildi" görünür ve tanım etkin kalır (Requirement 11).
 
 ## Kararlar
 
@@ -270,6 +306,16 @@ biçimsizse form `422` gösterir. Tüm metinler Türkçedir.
   açar ve indirir. Alıcılık koşum başında saklanan alıcı listesine göre belirlenir; erişim kuralı
   [review-history-export](../005-review-history-export/PRD.md) Decision 8'dedir. Proje sahibinin
   2026-10-05 kararı. Gerekçe: e-postadaki "Raporu aç" bağlantısı alıcıya çalışmalıdır.
+- Decision 13: E-posta durumu ve deneme yalnız süper yöneticiye açıktır; SMTP adresi, kullanıcı adı ve
+  gönderen adresi yanıtta yer almaz, yalnız "yapılandırıldı mı" bilgisi döner. Proje sahibinin
+  2026-10-15 yetkisiyle. Gerekçe: "mail atmıyor" durumunda kök neden (yapılandırma yok, çıkış
+  kapalı, TLS, kimlik) uygulamadan, sır göstermeden anlaşılmalıdır.
+- Decision 14: Deneme e-postası tek alıcıya gider, alıcı izinli alan adı kuralına uyar (Decision 5) ve
+  aynı süper yönetici için 15 saniyede bir kez gönderilebilir. Proje sahibinin 2026-10-15 yetkisiyle.
+  Gerekçe: kurumsal SMTP'nin toplu gönderim için kullanılmasını önler.
+- Decision 15: Zamanlanmış koşumu tanım sahibi ve süper yönetici durdurur; durdurma yalnız o koşumu
+  bitirir, tanımı duraklatmaz (duraklatma ayrı bir işlemdir). Durdurulan koşum için e-posta gitmez.
+  Proje sahibinin 2026-10-15 bildirimi.
 
 ## Açık sorular
 

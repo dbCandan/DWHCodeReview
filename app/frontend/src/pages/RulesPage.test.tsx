@@ -1,7 +1,6 @@
 import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import RulesPage from './RulesPage';
-import {RuleProposalService} from '@/services/ruleProposals';
 import {RuleSetService} from '@/services/ruleSet';
 import {apiError, renderWithSession} from '@/test/render';
 import type {RuleSetVersionDetail, RuleSetWorkspace} from '@/types/sqlReview';
@@ -43,12 +42,11 @@ function version(number: number): RuleSetVersionDetail {
   };
 }
 
-async function renderPage(role: 'kural-yoneticisi' | 'super_admin' = 'kural-yoneticisi') {
+async function renderPage(role: 'super_admin' = 'super_admin') {
   renderWithSession(<RulesPage />, {role});
   await screen.findByRole('heading', {name: /Kritik/});
 }
 
-const NO_REQUESTS = {items: [], page: 1, page_size: 1, total: 0};
 
 function column(name: RegExp) {
   return screen.getByRole('region', {name});
@@ -57,7 +55,6 @@ function column(name: RegExp) {
 describe('rules page', () => {
   beforeEach(() => {
     vi.spyOn(RuleSetService, 'workspace').mockResolvedValue(workspace());
-    vi.spyOn(RuleProposalService, 'publishRequests').mockResolvedValue(NO_REQUESTS);
   });
 
   it('shows both groups, the latest version line and the first 100 characters of each rule', async () => {
@@ -155,14 +152,13 @@ describe('rules page', () => {
     fireEvent.click(within(column(/Normal/)).getByText('Kural11'));
     fireEvent.change(screen.getByLabelText('Kural11 kural metni'), {target: {value: 'a'.repeat(8001)}});
     expect(screen.getByRole('button', {name: 'Taslağı kaydet'})).toBeDisabled();
-    expect(screen.getByRole('button', {name: 'Onaya gönder'})).toBeDisabled();
+    expect(screen.getByRole('button', {name: 'Yayınla'})).toBeDisabled();
   });
 });
 
 describe('rules page — summaries and approval (rule-management Requirement 12, rule-proposals Requirement 6)', () => {
   beforeEach(() => {
     vi.spyOn(RuleSetService, 'workspace').mockResolvedValue(workspace());
-    vi.spyOn(RuleProposalService, 'publishRequests').mockResolvedValue(NO_REQUESTS);
   });
 
   it('edits a rule summary and refuses one over 200 characters or on two lines', async () => {
@@ -180,58 +176,6 @@ describe('rules page — summaries and approval (rule-management Requirement 12,
     expect(save.mock.calls[0][1][0].summary).toBe('Kirli okuma yapılmaz.');
   });
 
-  it('offers the rule manager "Onaya gönder" instead of publishing; it saves first', async () => {
-    const save = vi.spyOn(RuleSetService, 'saveDraft').mockResolvedValue(workspace({revision: 5}));
-    const publish = vi.spyOn(RuleSetService, 'publish');
-    const request = vi.spyOn(RuleProposalService, 'requestPublish').mockResolvedValue({
-      id: 'req-1',
-      status: 'bekliyor',
-      requester_name: 'Mehmet Kural',
-      created_at: '2026-10-14T10:00:00Z',
-      draft_revision: 5,
-      draft_changed: false,
-      decided_by_name: null,
-      decided_at: null,
-      rejection_reason: null,
-      published_version_number: null,
-      owned: true,
-      diff: null,
-    });
-    await renderPage();
-    expect(screen.queryByRole('button', {name: 'Yayınla'})).toBeNull();
-    fireEvent.click(screen.getByRole('button', {name: 'Normal grubuna kural ekle'}));
-    fireEvent.change(screen.getByLabelText('Kural12 kural metni'), {target: {value: 'Yeni'}});
-    fireEvent.click(screen.getByRole('button', {name: 'Onaya gönder'}));
-    await screen.findByText('Taslak onaya gönderildi. Süper yönetici onaylayınca yeni sürüm yayımlanır.');
-    expect(request).toHaveBeenCalledWith(5);
-    expect(save.mock.invocationCallOrder[0]).toBeLessThan(request.mock.invocationCallOrder[0]);
-    expect(publish).not.toHaveBeenCalled();
-  });
-
-  it('shows the rejection reason of the latest publish request', async () => {
-    vi.mocked(RuleProposalService.publishRequests).mockResolvedValue({
-      items: [
-        {
-          id: 'req-1',
-          status: 'reddedildi',
-          requester_name: 'Mehmet Kural',
-          created_at: '2026-10-14T10:00:00Z',
-          draft_revision: 4,
-          draft_changed: false,
-          decided_by_name: 'Uygulama Yöneticisi',
-          decided_at: '2026-10-14T11:00:00Z',
-          rejection_reason: 'Kural metni belirsiz.',
-          published_version_number: null,
-          owned: true,
-        },
-      ],
-      page: 1,
-      page_size: 1,
-      total: 1,
-    });
-    await renderPage();
-    expect(await screen.findByText('Son yayın isteği: reddedildi · gerekçe: Kural metni belirsiz.')).toBeInTheDocument();
-  });
 });
 
 describe('rules page — named rule groups (rule-group-selection Requirement 1, 8)', () => {
@@ -247,12 +191,14 @@ describe('rules page — named rule groups (rule-group-selection Requirement 1, 
 
   beforeEach(() => {
     vi.spyOn(RuleSetService, 'workspace').mockResolvedValue(grouped());
-    vi.spyOn(RuleProposalService, 'publishRequests').mockResolvedValue(NO_REQUESTS);
   });
 
   it('shows each group with its rule count and each rule with its group', async () => {
     await renderPage();
     const groups = screen.getByRole('region', {name: /Kural grupları/});
+    // Folded: one line of names with their rule counts; the list opens for editing.
+    expect(within(within(groups).getByRole('list', {name: 'Gruplar'})).getByText('Performans')).toBeInTheDocument();
+    fireEvent.click(within(groups).getByRole('button', {name: 'Grupları düzenle'}));
     expect(within(groups).getByLabelText('Kural grubu 1 adı')).toHaveValue('Performans');
     expect(within(groups).getByText('1 kural')).toBeInTheDocument();
     expect(within(column(/Kritik/)).getByText('Performans')).toBeInTheDocument();
@@ -282,6 +228,7 @@ describe('rules page — named rule groups (rule-group-selection Requirement 1, 
   it('removes the memberships of a removed group', async () => {
     const save = vi.spyOn(RuleSetService, 'saveDraft').mockResolvedValue(workspace({revision: 5}));
     await renderPage();
+    fireEvent.click(screen.getByRole('button', {name: 'Grupları düzenle'}));
     fireEvent.click(screen.getByRole('button', {name: 'Performans grubunu sil'}));
     expect(within(column(/Kritik/)).queryByText('Performans')).toBeNull();
     fireEvent.click(screen.getByRole('button', {name: 'Taslağı kaydet'}));
@@ -299,6 +246,6 @@ describe('rules page — named rule groups (rule-group-selection Requirement 1, 
     expect(screen.getByRole('button', {name: 'Taslağı kaydet'})).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Kural grubu 2 adı'), {target: {value: '  '}});
     expect(screen.getByText('Kural grubu adı boş olamaz.')).toBeInTheDocument();
-    expect(screen.getByRole('button', {name: 'Onaya gönder'})).toBeDisabled();
+    expect(screen.getByRole('button', {name: 'Yayınla'})).toBeDisabled();
   });
 });

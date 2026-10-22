@@ -14,29 +14,20 @@ import {useAuth} from '@/contexts/AuthContext';
 import {useResource} from '@/hooks/useResource';
 import {describeError, messageForCode} from '@/lib/errorMessages';
 import {formatDateTime} from '@/lib/format';
-import {applyFalsePositive, hasStoredSql} from '@/lib/reviewResults';
-import type {Tone} from '@/lib/utils';
+import {RUN_STATUS as STATUS, applyFalsePositive, hasStoredSql} from '@/lib/reviewResults';
 import {ReviewService} from '@/services/reviews';
-import type {ReviewRunDetail, ReviewRunStatus, ReviewRunSummary} from '@/types/sqlReview';
+import type {ReviewRunDetail, ReviewRunSummary} from '@/types/sqlReview';
 
 const PAGE_SIZE = 50;
 /** Objects of a run shown per page of its results (review-history-export Requirement 3). */
 const RESULTS_PAGE_SIZE = 50;
-
-const STATUS: Record<ReviewRunStatus, {label: string; tone: Tone}> = {
-  running: {label: 'Sürüyor', tone: 'warning'},
-  completed: {label: 'Tamamlandı', tone: 'success'},
-  failed: {label: 'Hata', tone: 'danger'},
-  cancelled: {label: 'Durduruldu', tone: 'neutral'},
-  interrupted: {label: 'Yarıda kesildi', tone: 'warning'},
-};
 
 type Scope = 'mine' | 'all';
 type PendingDelete = {kind: 'one'; run: ReviewRunSummary} | {kind: 'all'};
 
 /**
  * Review history stored on the server (sql-review review-history-export Requirement 1–5, 10, 11):
- * own runs for everyone, all runs read-only for the rule manager, details with false-positive
+ * own runs for everyone, all runs read-only for the super admin, details with false-positive
  * marks, CSV and SQL downloads and deletion of own finished runs.
  */
 export default function ReviewHistoryPage() {
@@ -84,11 +75,13 @@ export default function ReviewHistoryPage() {
   }
 
   const data = runs.data;
+  // One screen: without a choice the newest finished run is open on the right.
+  const shownId = selectedId ?? data?.items.find((run) => run.status !== 'running')?.id ?? null;
   return (
-    <div className="page">
+    <div className="page page-fill">
       <PageHeader
         title="İnceleme geçmişi"
-        description="Biten incelemeleriniz sunucuda saklanır ve hangi bilgisayardan girerseniz girin burada görünür. Kayıtlar saklama süresi dolunca kendiliğinden silinir."
+        description="Biten incelemeleriniz sunucuda saklanır; soldan seçin, sonuçları sağda görün. Kayıtlar saklama süresi dolunca silinir."
         actions={
           <>
             <Button onClick={runs.reload}>Yenile</Button>
@@ -119,7 +112,7 @@ export default function ReviewHistoryPage() {
         </fieldset>
       )}
       {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
-      <div className="master-detail">
+      <div className="master-detail fill-row">
         <Card
           title={`Kayıtlar${data ? ` (${data.total})` : ''}`}
           footer={data ? <Pager page={page} pageSize={PAGE_SIZE} total={data.total} onPage={setPage} /> : undefined}
@@ -139,7 +132,7 @@ export default function ReviewHistoryPage() {
                   <RunRow
                     run={run}
                     showOwner={effectiveScope === 'all'}
-                    selected={run.id === selectedId}
+                    selected={run.id === shownId}
                     onSelect={() => setSelectedId(run.id)}
                   />
                   {run.owned && run.status !== 'running' && (
@@ -159,12 +152,12 @@ export default function ReviewHistoryPage() {
             </ul>
           )}
         </Card>
-        {selectedId === null ? (
+        {shownId === null ? (
           <Card title="Sonuçlar">
             <EmptyState title="Soldan bir inceleme seçin." />
           </Card>
         ) : (
-          <RunDetail key={selectedId} runId={selectedId} />
+          <RunDetail key={shownId} runId={shownId} />
         )}
       </div>
       {pendingDelete && (
@@ -213,7 +206,7 @@ function RunRow({
         <span className="subtle">{formatDateTime(run.started_at)}</span>
       </span>
       <strong>{run.title}</strong>
-      {run.subtitle && <span className="subtle mono">{run.subtitle}</span>}
+      {run.subtitle && <span className="subtle mono clamp-2" title={run.subtitle}>{run.subtitle}</span>}
       {run.error_code && run.status !== 'cancelled' && (
         <span className="field-error">{messageForCode(run.error_code) ?? run.error_message}</span>
       )}
@@ -234,7 +227,7 @@ const KIND_BADGES: Record<ReviewRunSummary['kind'], {tone: 'info' | 'primary' | 
 function RunDetail({runId}: {runId: string}) {
   const [resultsPage, setResultsPage] = useState(1);
   const detail = useResource(`run:${runId}:${resultsPage}`, (signal) =>
-    ReviewService.run(runId, resultsPage, RESULTS_PAGE_SIZE, signal),
+    ReviewService.run(runId, resultsPage, RESULTS_PAGE_SIZE, signal, true),
   );
   const run = detail.data;
   if (detail.status === 'error')
@@ -271,7 +264,7 @@ function RunDetail({runId}: {runId: string}) {
           {formatDateTime(run.started_at)} · kural sürümü {run.rule_version} · {run.object_count} nesne ·{' '}
           {run.finding_count} bulgu · {run.owner_display_name}
         </p>
-        {run.subtitle && <p className="subtle mono">{run.subtitle}</p>}
+        {run.subtitle && <p className="subtle mono wrap-anywhere">{run.subtitle}</p>}
         <p className="subtle">{selectionLine(run)}</p>
         {!run.owned && <Alert tone="info">Bu inceleme başka bir kullanıcıya ait; yalnız okunabilir.</Alert>}
         {run.status === 'cancelled' && <Alert tone="info">Bu inceleme durduruldu; kısmi sonuç saklanmaz.</Alert>}

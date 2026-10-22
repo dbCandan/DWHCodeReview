@@ -2,15 +2,18 @@
 
 Status: Accepted
 
-Version: 1.2.0
+Version: 1.3.0
 
-Acceptance date: 2026-10-02
+Acceptance date: 2026-10-15
 
 Domain: [sql-review](../../DOMAIN.md)
 
 Kabul kaydı: Proje sahibi bu PRD'yi 2026-10-02'de, bir koşumdaki nesne sayısı sınırının kaldırılması
 ve süzgece uyan bütün nesnelerin tek adımda seçilebilmesi kararıyla (Decision 3) ve önceki sahip
-kararlarıyla kabul etti.
+kararlarıyla kabul etti. 1.3.0 revizyonunu (Requirement 15, Decision 9: açık
+durdurma isteği) proje sahibi 2026-10-15'te kabul etti.
+
+**1.x revizyon notu (2026-10-15):** [directory-login](../../../application-foundation/PRDs/001-directory-login/PRD.md) 1.3.0 Decision 14 ile `kural-yoneticisi` rolü kaldırıldı; kullanıcılar `inceleyici` (arayüzde "Kullanıcı") ve süper yöneticidir. Bu belgede kural yöneticisine verilen yetkiler (taslağı düzenleme ve yayımlama, bağlantı ayarları, LLM çağrı özetleri, tüm incelemeleri görme) süper yöneticidedir; "inceleyici" geçen yerler her kullanıcıyı anlatır.
 
 ## Amaç
 
@@ -193,7 +196,10 @@ taşımaz (`results_omitted: true`); arayüz sonuçları saklanan koşumdan,
 
 Requirement 15: İnceleyici "Analizi durdur" dediğinde veya bağlantı koptuğunda sunucu 5 saniye içinde
 yeni LLM çağrısı başlatmayı bırakır ve süren çağrıları keser. Koşum "iptal edildi" durumuyla saklanır,
-kısmi sonuç saklanmaz ve gösterilmez; arayüz "İnceleme durduruldu." yazar.
+kısmi sonuç saklanmaz ve gösterilmez; arayüz "İnceleme durduruldu." yazar. "Analizi durdur" ayrıca açık bir
+durdurma isteği gönderir (`POST /review-runs/{id}/cancel`); durdurma, araya giren vekil sunucunun
+bağlantı kapanışını arka uca iletmesine bağlı kalmaz. Arayüz istek sürerken "Durduruluyor…" yazar ve
+sunucu onaylayınca durumu gösterir (Decision 9).
 
 Requirement 16: Koşum başlarken PostgreSQL'e koşum kaydı (dış kimlik `public_id`, başlatan kullanıcı,
 kural sürümü, tür "nesne", nesne sayısı, durum "sürüyor", başlangıç zamanı) yazılır. Başarıyla biten
@@ -417,6 +423,11 @@ anda işlenen nesne sayısıyla ve biten nesnelerin saklanacak sonuçlarıyla b�
 - Decision 8: Aynı anda işlenen nesne sayısı için yeni ayar eklenmez; koşumun LLM eşzamanlılık sınırı
   kullanılır. Gerekçe: her nesne bütün kurallarını o sınırın yuvalarında çalıştırır; sınır kadar nesne
   bütün yuvaları dolu tutmaya yeter, daha fazlası yalnız bekleyen SQL metnini bellekte tutar.
+- Decision 9: Durdurma açık bir istekle de yapılır: koşumun sahibi (süper yönetici her koşumu) `POST
+  /review-runs/{id}/cancel` ile koşumu durdurur; bu süreçte görevi olmayan "sürüyor" koşum doğrudan
+  "iptal edildi" olur. Bitmiş koşum `409 review_run_not_running` alır. Proje sahibinin 2026-10-15
+  bildirimi ("analiz durdur çalışmıyor"). Gerekçe: kurumsal giriş/vekil katmanı akış kapanışını
+  geciktirebilir; LLM çağrıları kullanıcı durdurduğu anda kesilmelidir.
 
 ## Teslim akışı
 

@@ -2,9 +2,9 @@
 
 Status: Accepted
 
-Version: 1.5.0
+Version: 1.6.0
 
-Acceptance date: 2026-10-14
+Acceptance date: 2026-10-16
 
 Domain: [sql-review](../../DOMAIN.md)
 
@@ -13,7 +13,10 @@ salt okunur görmesi kararıyla (Decision 8, [zamanlanmış inceleme](../008-sch
 Decision 12), kural gruplarının CSV'nin son sütununda ve SQL yorumunda kuralın yanında yer alması kararıyla
 (Decision 9), nesne sayısı sınırını kaldıran kararın ([nesne incelemesi](../003-object-review/PRD.md)
 Decision 3) geçmiş ve dışa aktarıma etkisiyle (Requirement 3 ve 12) ve önceki sahip kararlarıyla kabul
-etti.
+etti. 1.6.0 revizyonu (Requirement 13, Decision 10: geçmişte kod görünümü) 2026-10-16'te
+eklendi; proje sahibinin onayına sunuldu.
+
+**1.x revizyon notu (2026-10-15):** [directory-login](../../../application-foundation/PRDs/001-directory-login/PRD.md) 1.3.0 Decision 14 ile `kural-yoneticisi` rolü kaldırıldı; kullanıcılar `inceleyici` (arayüzde "Kullanıcı") ve süper yöneticidir. Bu belgede kural yöneticisine verilen yetkiler (taslağı düzenleme ve yayımlama, bağlantı ayarları, LLM çağrı özetleri, tüm incelemeleri görme) süper yöneticidedir; "inceleyici" geçen yerler her kullanıcıyı anlatır.
 
 ## Amaç
 
@@ -93,7 +96,8 @@ adı da yazar.
 
 Requirement 3: Koşum ayrıntısı, canlı sonuç ekranıyla aynı sonuç görünümünü (nesneler, kural
 sonuçları, bulgular, nesne hatası ve ayrıştırma uyarısı) yanlış pozitif işaretleriyle birlikte
-gösterir. Ayrıntı yanıtı SQL metnini içermez. Ayrıntı nesne nesne sayfalıdır (varsayılan 50, en çok
+gösterir. Ayrıntı yanıtı SQL metnini yalnız `with_sql` istendiğinde içerir (Requirement 13). Ayrıntı
+nesne nesne sayfalıdır (varsayılan 50, en çok
 200 nesne; nesneler koşumdaki seçim sırasıyla gelir); ekran sayfalar arasında gezinir ve toplam nesne
 sayısını gösterir. Canlı ekran, sonuçlarını taşımayan büyük koşumu
 ([nesne incelemesi](../003-object-review/PRD.md) Requirement 14) bu ayrıntıda açar.
@@ -149,6 +153,12 @@ okur. Ayrıntı ve dışa aktarımlar koşumu nesne konumu aralığıyla parça 
 sorgu başına parametre sınırı (32.767) koşumun büyüklüğünü kısıtlamaz. CSV ve SQL dosyaları büyük
 koşumda da Requirement 7 ve 8'deki içerikle, tek dosya olarak üretilir.
 
+Requirement 13: Koşum ayrıntısında her nesnenin sonuçları, incelenen SQL metninin satır numaralı
+görünümüyle yan yana gösterilir; bulgunun işaret ettiği satırlar önem rengiyle vurgulanır ve bulgudaki
+satır referansı koddaki satıra götürür. Ayrıntı ucu SQL metnini yalnız `with_sql=true` istendiğinde ve
+SQL dışa aktarımını indirebilen kişiye (sahip, süper yönetici, zamanlanmış koşum alıcısı) döndürür;
+metin saklanmamışsa alan `null` olur ve görünüm gösterilmez (Decision 10).
+
 ## API sözleşmesi
 
 Tüm uçlar `/api/dwhcodereview/v1` altındadır, geçerli oturum ister ve hatayı
@@ -158,7 +168,7 @@ Tüm uçlar `/api/dwhcodereview/v1` altındadır, geçerli oturum ister ve hatay
 | Yöntem ve yol | Rol | İstek → yanıt |
 |---|---|---|
 | `GET /review-runs` | inceleyici, kural-yoneticisi | `scope=mine\|all`, `page`, `page_size` → satırlar ve sayfa bilgisi |
-| `GET /review-runs/{run_id}` | sahip; kural-yoneticisi; zamanlanmış koşum alıcısı | `page`, `page_size` (nesne sayfası; varsayılan 50, en çok 200) → koşum ayrıntısı, o sayfanın sonuçları, `results_page` ve `results_page_size`; toplam `object_count` alanıdır (Requirement 3) |
+| `GET /review-runs/{run_id}` | sahip; süper yönetici; zamanlanmış koşum alıcısı | `page`, `page_size` (nesne sayfası; varsayılan 50, en çok 200), isteğe bağlı `with_sql` (Requirement 13) → koşum ayrıntısı, o sayfanın sonuçları, `results_page` ve `results_page_size`; toplam `object_count` alanıdır (Requirement 3) |
 | `PUT /review-runs/{run_id}/findings/{finding_id}/false-positive` | sahip | `{false_positive: bool}` → güncel işaret |
 | `PUT /review-runs/{run_id}/rule-results/{rule_result_id}/false-positive` | sahip | `{false_positive: bool}` → güncel işaret |
 | `DELETE /review-runs/{run_id}` | sahip | → 204 |
@@ -268,6 +278,9 @@ istekten dosya olarak kaydedilir.
 - [ ] Acceptance 6: L1 — Otomatik testlerden geçti: zamanlanmış koşum alıcısının salt okunur erişimi ve
   alıcı olmayanın `404` alması gerçek PostgreSQL testleriyle geçer (Decision 8). L2 kanıtı
   [zamanlanmış inceleme](../008-scheduled-review-email/PRD.md) Acceptance 4 ile birlikte alınır.
+- [ ] Acceptance 7: L1 — Otomatik testlerden geçti: ayrıntı `with_sql` olmadan SQL metni taşımaz,
+  `with_sql=true` ile sahibine metni döndürür, başkasına `404` olur; ön yüzde kod görünümü satır
+  vurgusu ve satıra gitme testleri geçer (Requirement 13).
 
 ## Kararlar
 
@@ -297,6 +310,9 @@ istekten dosya olarak kaydedilir.
   çok gruptaysa adlar CSV'de `; `, SQL yorumunda virgülle ayrılır. Proje sahibinin 2026-10-06 ve
   2026-10-14 kararı. Gerekçe: mevcut sütunların sırası değişmez; dosyayı sütun sırasıyla
   okuyan araçlar bozulmaz.
+- Decision 10: Ayrıntıdaki SQL metni isteğe bağlıdır ve SQL dışa aktarımıyla aynı kişilere açıktır;
+  bu yüzden yeni bir erişim yolu açmaz. Varsayılan yanıt metni taşımaz, liste ve sayfalama yükü
+  büyümez. Proje sahibinin 2026-10-16 "kalan kısma devam et" talimatıyla eklendi; reddedilirse geri alınır.
 
 ## Teslim akışı
 

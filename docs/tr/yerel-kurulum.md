@@ -54,8 +54,7 @@ panelinde görünür.
 | DWH: Uygulamayı durdur | Uygulamayı durdurur. Hesaplar, kurallar ve geçmiş silinmez. |
 | DWH: Uygulamanın durumunu göster | Uygulamanın hangi parçasının çalıştığını listeler. |
 | DWH: Arka uç günlüğünü izle | Uygulamanın sunucu tarafının (arka uç) yaptığı işlerin kaydını (günlük) canlı gösterir. Kapatmak için terminal panelindeki çöp kutusu simgesine basın. |
-| DWH: Yerel test hesabı aç (inceleyici) | İnceleyici rolünde hesap açar ya da parolasını sıfırlar. |
-| DWH: Yerel test hesabı aç (kural yöneticisi) | Kural yöneticisi rolünde hesap açar ya da parolasını sıfırlar. |
+| DWH: Yerel test hesabı aç (kullanıcı) | Kullanıcı rolünde hesap açar ya da parolasını sıfırlar. |
 | DWH: Yerel süper yönetici aç | Kullanıcıları yöneten süper yönetici hesabını açar ya da parolasını sıfırlar. |
 
 Görevler projedeki `.vscode/tasks.json` dosyasında tanımlıdır ve `scripts/` klasöründeki hazır
@@ -66,8 +65,8 @@ betikleri (komut dosyalarını) çalıştırır.
 Yerelde kurum dizini kapalıdır; kurum hesabınızla giremezsiniz. Uygulamayı denemek için yerel test
 hesapları açarsınız. Bu hesaplar yalnız sizin bilgisayarınızdaki uygulamada vardır.
 
-1. Uygulama çalışırken **DWH: Yerel test hesabı aç (inceleyici)** ya da **DWH: Yerel test hesabı aç
-   (kural yöneticisi)** görevini çalıştırın.
+1. Uygulama çalışırken **DWH: Yerel test hesabı aç (kullanıcı)** görevini çalıştırın. Kuralları ve
+   bağlantıları yönetmek için süper yönetici hesabını kullanın.
 2. Terminal panelinde `Yerel test kullanıcı adı:` sorusuna bir ad yazıp Enter'a basın (örneğin
    `deneme.inceleyici`; boşluk içeremez).
 3. `Parola (en az 15 karakter):` sorusuna parolayı yazıp Enter'a basın. Güvenlik için yazdığınız
@@ -143,7 +142,7 @@ Ayarı iki yoldan verebilirsiniz:
 
 - **Kalıcı:** `app/infra/.env` dosyasına aşağıdaki satırları ekleyip **DWH: Uygulamayı başlat**
   görevini çalıştırın.
-- **Geçici:** Kural yöneticisi hesabıyla girip **Yönetim → SQL bağlantısı** ya da **Yönetim → LLM
+- **Geçici:** Süper yönetici hesabıyla girip **Yönetim → SQL bağlantısı** ya da **Yönetim → LLM
   bağlantısı** sayfasından girin. Bu değerler uygulama yeniden başlayınca kaybolur.
 
 SQL Server satırları:

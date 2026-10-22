@@ -86,6 +86,7 @@ describe('script review page — rule groups (rule-group-selection Requirement 4
     const stream = vi.spyOn(ReviewService, 'streamScriptReview').mockResolvedValue(undefined);
     renderWithSession(<ScriptReviewPage />);
     fireEvent.click(await screen.findByLabelText('Performans (1 kural)'));
+    fireEvent.change(screen.getByLabelText('Kural ara'), {target: {value: 'Kural01'}});
     fireEvent.click(screen.getByRole('checkbox', {name: /^Kural01/}));
     fireEvent.change(screen.getByLabelText('SQL'), {target: {value: 'SELECT 1'}});
     fireEvent.click(button());

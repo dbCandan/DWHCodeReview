@@ -16,18 +16,25 @@ from app.api.auth.dependencies import (
     require_any_role,
     require_super_admin,
 )
+from app.api.integrations import get_review_registry
 from app.api.validation import envelope_validation_route
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
-from app.domain.models.role import ROLE_REVIEWER, ROLE_RULE_MANAGER
+from app.domain.models.role import ROLE_REVIEWER
 from app.schemas.scheduled_reviews.contracts import (
+    ScheduledEmailStatus,
+    ScheduledEmailTest,
+    ScheduledEmailTestResult,
     ScheduledReviewDetail,
     ScheduledReviewPage,
     ScheduledReviewSettings,
     ScheduledReviewWrite,
     ScheduledRunPage,
     ScheduledRunQueued,
+    ScheduledRunStopped,
 )
+from app.services.review_run_service import ReviewRunRegistry
+from app.services.scheduled_email_check import MailSender, ScheduledEmailCheck
 from app.services.scheduled_review_service import (
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
@@ -57,7 +64,7 @@ router = APIRouter(
     prefix="/scheduled-reviews",
     tags=["scheduled-reviews"],
     route_class=envelope_validation_route(status.HTTP_422_UNPROCESSABLE_CONTENT),
-    dependencies=[Depends(require_any_role(ROLE_REVIEWER, ROLE_RULE_MANAGER))],
+    dependencies=[Depends(require_any_role(ROLE_REVIEWER))],
     responses=_RESPONSES,
 )
 settings_router = APIRouter(
@@ -77,6 +84,35 @@ def get_scheduled_review_service(
 
 
 Service = Annotated[ScheduledReviewService, Depends(get_scheduled_review_service)]
+
+
+def get_mail_sender(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> MailSender | None:
+    """The summary e-mail's SMTP adapter, or None when the relay is not configured."""
+
+    # Imported here: the runner wires the review runtime, which this router does not need.
+    from app.api.scheduled_reviews.runner import build_mail_sender
+
+    return build_mail_sender(settings)
+
+
+def get_scheduled_email_check(
+    session: Annotated[AsyncSession, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    mailer: Annotated[MailSender | None, Depends(get_mail_sender)],
+) -> ScheduledEmailCheck:
+    return ScheduledEmailCheck(
+        session,
+        allowed_domains=settings.mail_allowed_domain_list,
+        scheduler_enabled=settings.scheduler_enabled,
+        smtp_security=settings.smtp_security,
+        public_origin=settings.public_origin,
+        mailer=mailer,
+    )
+
+
+EmailCheck = Annotated[ScheduledEmailCheck, Depends(get_scheduled_email_check)]
 ScheduleId = Annotated[str, Path(min_length=1, max_length=64)]
 
 
@@ -171,6 +207,26 @@ async def run_scheduled_review_now(
     return await service.run_now(context, schedule_id)
 
 
+@router.post(
+    "/{schedule_id}/stop",
+    response_model=ScheduledRunStopped,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        **_NOT_FOUND,
+        409: {"description": "scheduled_review_not_running: sırada veya süren koşum yok"},
+    },
+)
+async def stop_scheduled_review_run(
+    schedule_id: ScheduleId,
+    context: CurrentContext,
+    service: Service,
+    registry: Annotated[ReviewRunRegistry, Depends(get_review_registry)],
+) -> ScheduledRunStopped:
+    """Durdur: end the definition's queued or running run (owner or super admin)."""
+
+    return await service.stop(context, schedule_id, registry)
+
+
 @router.get("/{schedule_id}/runs", response_model=ScheduledRunPage, responses=_NOT_FOUND)
 async def list_scheduled_review_runs(
     schedule_id: ScheduleId,
@@ -200,3 +256,28 @@ async def update_scheduled_review_settings(
     body: ScheduledReviewSettings, context: CurrentContext, service: Service
 ) -> ScheduledReviewSettings:
     return await service.update_settings(context, body)
+
+
+@settings_router.get("/email", response_model=ScheduledEmailStatus)
+async def read_scheduled_email_status(
+    context: CurrentContext, check: EmailCheck
+) -> ScheduledEmailStatus:
+    """Whether the summary e-mail can leave this deployment (Requirement 10)."""
+
+    return await check.status(context)
+
+
+@settings_router.post(
+    "/email/test",
+    response_model=ScheduledEmailTestResult,
+    responses={
+        422: {"description": "recipient_invalid veya recipient_domain_not_allowed"},
+        429: {"description": "email_test_too_soon"},
+    },
+)
+async def send_scheduled_test_email(
+    body: ScheduledEmailTest, context: CurrentContext, check: EmailCheck
+) -> ScheduledEmailTestResult:
+    """Send one test message to one corporate address through the SMTP relay (Decision 14)."""
+
+    return await check.send_test(context, body.recipient)

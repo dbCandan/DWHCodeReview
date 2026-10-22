@@ -11,12 +11,9 @@ import pytest
 from sqlalchemy import select, text, update
 
 from app.core.config import get_settings
-from app.core.security import refresh_token_digest
 from app.db.session import async_session_factory
-from app.domain.models.refresh_session import RefreshSession
 from app.domain.models.role import Role, UserRole
 from app.domain.models.user import User
-from app.domain.models.user_change import UserChange
 from app.scripts.create_local_user import LocalUserRefused, ensure_local_user
 from tests.integration.conftest import AuthHarness, RecordingHandler, SuperAdmin
 
@@ -87,7 +84,6 @@ async def test_admin_endpoints_need_a_session_and_the_super_admin(auth: AuthHarn
     target = body["user"]["public_id"]
     requests = (
         ("GET", "/admin/users", None),
-        ("PUT", f"/admin/users/{target}/role", {"role": "kural-yoneticisi"}),
         ("PUT", f"/admin/users/{target}/active", {"active": False}),
     )
     for method, path, payload in requests:
@@ -100,84 +96,6 @@ async def test_admin_endpoints_need_a_session_and_the_super_admin(auth: AuthHarn
         )
         assert forbidden.status_code == 403
         assert forbidden.json()["detail"]["code"] == "forbidden"
-
-
-async def test_role_change_is_recorded_ends_sessions_and_is_idempotent(
-    auth: AuthHarness, super_admin: SuperAdmin, recorded_logs: RecordingHandler
-) -> None:
-    headers = await _admin_session(auth, super_admin)
-    body, name, password, cookie = await _directory_user(auth)
-    target = body["user"]["public_id"]
-    url = f"{auth.prefix}/admin/users/{target}/role"
-
-    changed = await auth.client.put(url, json={"role": "kural-yoneticisi"}, headers=headers)
-    repeated = await auth.client.put(url, json={"role": "kural-yoneticisi"}, headers=headers)
-
-    assert changed.status_code == repeated.status_code == 200
-    assert changed.json() == repeated.json() == {"role": "kural-yoneticisi"}
-    async with async_session_factory() as session:
-        user = (await session.execute(select(User).where(User.public_id == target))).scalar_one()
-        changes = (
-            await session.scalars(
-                select(UserChange).where(UserChange.target_user_id == user.user_id)
-            )
-        ).all()
-        session_row = (
-            await session.execute(
-                select(RefreshSession).where(
-                    RefreshSession.token_sha256 == refresh_token_digest(cookie)
-                )
-            )
-        ).scalar_one()
-        active_roles = (
-            await session.scalars(
-                select(Role.code)
-                .join(UserRole, UserRole.role_id == Role.role_id)
-                .where(UserRole.user_id == user.user_id, UserRole.is_deleted.is_(False))
-            )
-        ).all()
-    assert [(c.changed_field, c.old_value, c.new_value) for c in changes] == [
-        ("role", "inceleyici", "kural-yoneticisi")
-    ]
-    assert active_roles == ["kural-yoneticisi"]
-    assert session_row.revoke_reason == "authorization_changed"
-    refresh = await auth.client.post(
-        f"{auth.prefix}/auth/refresh",
-        headers={**auth.origin_headers(), "cookie": f"dwhcodereview_refresh={cookie}"},
-    )
-    assert refresh.status_code == 401
-    assert refresh.json()["detail"]["code"] == "session_revoked"
-    relogin = await auth.login(name, password)
-    assert relogin.json()["user"]["role"] == "kural-yoneticisi"
-    event = recorded_logs.events("admin.user.role_changed")[-1]
-    assert event["target_public_id"] == target
-    assert (event["old_value"], event["new_value"]) == ("inceleyici", "kural-yoneticisi")
-
-
-async def test_role_change_rejects_bad_values_unknown_users_and_the_super_admin(
-    auth: AuthHarness, super_admin: SuperAdmin
-) -> None:
-    headers = await _admin_session(auth, super_admin)
-    body, *_ = await _directory_user(auth)
-    target = body["user"]["public_id"]
-
-    bad_value = await auth.client.put(
-        f"{auth.prefix}/admin/users/{target}/role", json={"role": "super_admin"}, headers=headers
-    )
-    unknown = await auth.client.put(
-        f"{auth.prefix}/admin/users/{uuid4()}/role", json={"role": "inceleyici"}, headers=headers
-    )
-    protected = await auth.client.put(
-        f"{auth.prefix}/admin/users/{super_admin.public_id}/role",
-        json={"role": "inceleyici"},
-        headers=headers,
-    )
-
-    assert bad_value.status_code == 400
-    assert unknown.status_code == 404
-    assert unknown.json()["detail"]["code"] == "user_not_found"
-    assert protected.status_code == 409
-    assert protected.json()["detail"]["code"] == "super_admin_protected"
 
 
 async def test_deactivation_blocks_login_and_reactivation_restores_it(
@@ -243,7 +161,7 @@ async def test_super_admin_cannot_deactivate_its_own_account(
     assert response.json()["detail"]["code"] == "own_account"
 
 
-async def test_role_change_rereads_the_callers_authority(
+async def test_an_admin_change_rereads_the_callers_authority(
     auth: AuthHarness, super_admin: SuperAdmin
 ) -> None:
     headers = await _admin_session(auth, super_admin)
@@ -259,8 +177,8 @@ async def test_role_change_rereads_the_callers_authority(
 
     # The access token still says super_admin, but the database no longer does.
     response = await auth.client.put(
-        f"{auth.prefix}/admin/users/{body['user']['public_id']}/role",
-        json={"role": "kural-yoneticisi"},
+        f"{auth.prefix}/admin/users/{body['user']['public_id']}/active",
+        json={"active": False},
         headers=headers,
     )
     assert response.status_code == 403
@@ -302,7 +220,7 @@ async def test_local_test_accounts_are_refused_outside_the_local_environment(
             )
 
 
-async def test_local_test_account_creation_is_idempotent_and_switches_the_role(
+async def test_local_test_account_creation_is_idempotent(
     migrated_database: None,
 ) -> None:
     settings = get_settings().model_copy(update={"environment": "development"})
@@ -321,7 +239,7 @@ async def test_local_test_account_creation_is_idempotent_and_switches_the_role(
             settings,
             username=name,
             password=secrets.token_urlsafe(24),
-            role_code="kural-yoneticisi",
+            role_code="inceleyici",
         )
         roles = (
             await session.scalars(
@@ -333,4 +251,4 @@ async def test_local_test_account_creation_is_idempotent_and_switches_the_role(
         ).all()
     assert first.created is True and second.created is False
     assert first.user_public_id == second.user_public_id
-    assert roles == ["kural-yoneticisi"]
+    assert roles == ["inceleyici"]

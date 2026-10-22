@@ -1,74 +1,68 @@
-import {Suspense, useState} from 'react';
-import {NavLink, Outlet, useLocation} from 'react-router';
+import {Suspense, useEffect, useState} from 'react';
+import {Link, Outlet, useLocation} from 'react-router';
+import {BrandMark} from '@/components/brand/BrandMark';
+import {CommandPalette} from '@/components/layout/CommandPalette';
+import {Backdrop} from '@/components/layout/Backdrop';
 import {GlobalReviewIndicator, ReviewWindows} from '@/components/review/ReviewWindows';
-import {Button} from '@/components/ui/Button';
+import {Icon} from '@/components/ui/Icon';
 import {LoadingState} from '@/components/ui/States';
 import {useAuth} from '@/contexts/AuthContext';
 import {useIntl} from '@/contexts/IntlContext';
 import {ReviewSessionProvider, useReviewSession} from '@/contexts/ReviewSessionContext';
-import {useConnectionMenu} from '@/hooks/useConnectionMenu';
-import {useRuleProposalMenu} from '@/hooks/useRuleProposalMenu';
+import {NavigationProvider, useAppNavigation} from '@/contexts/NavigationContext';
+import {isCurrent} from '@/lib/navigation';
 import {roleLabel} from '@/lib/access';
 import {config} from '@/lib/config';
 
-interface MenuItem {
-  to: string;
-  label: string;
-  busy?: boolean;
-  /** Pending decisions shown next to the label (rule-proposals Requirement 7). */
-  count?: number;
-}
-
 /**
- * Signed-in layout: role-aware navigation, the user and sign-out, the live review indicator and
- * windows. Hiding a menu item is not authorization; every page's data comes from role-checked
- * endpoints.
+ * Signed-in layout, "Evren": a star field behind everything, one side menu with the daily work
+ * and the super admin's Yönetim, Ctrl+K quick navigation, the live review and the user at the
+ * foot; the page fills the rest of the screen. On a narrow screen the menu folds behind a button.
+ * Hiding a destination is not authorization; every page's data comes from role-checked endpoints.
  */
 export function AppShell() {
   return (
     <ReviewSessionProvider>
-      <ShellLayout />
+      <NavigationProvider>
+        <ShellLayout />
+      </NavigationProvider>
     </ReviewSessionProvider>
   );
 }
 
 function ShellLayout() {
-  const {user, access, logout} = useAuth();
+  const {user, logout} = useAuth();
   const {t} = useIntl();
   const {session} = useReviewSession();
-  const location = useLocation();
+  const navigation = useAppNavigation();
+  const {pathname} = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPath, setMenuPath] = useState(location.pathname);
+  const [menuPath, setMenuPath] = useState(pathname);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const connections = useConnectionMenu(access.manageRules);
-  const proposals = useRuleProposalMenu(access.review, location.pathname);
 
   // Close the narrow-screen menu after navigation.
-  if (menuPath !== location.pathname) {
-    setMenuPath(location.pathname);
+  if (menuPath !== pathname) {
+    setMenuPath(pathname);
     setMenuOpen(false);
   }
 
-  const running = session.phase === 'running';
-  const reviewItems: MenuItem[] = access.review
-    ? [
-        {to: '/inceleme', label: 'Nesne incelemesi', busy: running && session.kind === 'object'},
-        {to: '/sql-inceleme', label: 'SQL betiği incelemesi', busy: running && session.kind === 'script'},
-        {to: '/gecmis', label: 'İnceleme geçmişi'},
-        {to: '/zamanlanmis-incelemeler', label: 'Zamanlanmış incelemeler'},
-        {to: '/yayimlanmis-kurallar', label: 'Yayımlanmış kurallar'},
-        ...(proposals.canPropose ? [{to: '/kural-onerilerim', label: 'Kural önerilerim'}] : []),
-      ]
-    : [];
-  const adminItems: MenuItem[] = [
-    ...(access.manageRules ? [{to: '/kurallar', label: 'Kurallar'}] : []),
-    ...(proposals.canDecide ? [{to: '/kural-onaylari', label: 'Kural onayları', count: proposals.pending}] : []),
-    ...(access.manageRules && connections.sql ? [{to: '/ayarlar/sql', label: 'SQL bağlantısı'}] : []),
-    ...(access.manageRules && connections.llm ? [{to: '/ayarlar/llm', label: 'LLM bağlantısı'}] : []),
-    ...(access.manageRules ? [{to: '/llm-cagrilari', label: 'LLM çağrıları'}] : []),
-    ...(access.administerUsers ? [{to: '/ayarlar/zamanlama', label: 'Zamanlama ayarı'}] : []),
-    ...(access.administerUsers ? [{to: '/kullanicilar', label: 'Kullanıcılar'}] : []),
-  ];
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setPaletteOpen(true);
+      } else if (event.key === 'Escape') {
+        setMenuOpen(false);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const reviewing = session.phase === 'running';
+  const displayName = user?.display_name || user?.username || '';
+  const role = user?.is_super_admin ? t('home.overview.superAdmin') : roleLabel(user?.role);
 
   async function signOut() {
     setSigningOut(true);
@@ -76,73 +70,108 @@ function ShellLayout() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="shell" data-menu={menuOpen ? 'open' : 'closed'}>
+      <Backdrop />
       <a className="skip-link" href="#main-content">
         {t('shell.skipToContent')}
       </a>
-      <aside className="app-sidebar" data-open={menuOpen}>
-        <div className="row">
-          <div className="grow">
-            <p className="app-brand">{config.productName}</p>
-            <p className="app-brand-tag">{t('shell.tagline')}</p>
-          </div>
-          <Button
-            size="sm"
-            className="app-menu-toggle"
-            aria-expanded={menuOpen}
-            aria-controls="main-navigation"
-            onClick={() => setMenuOpen(!menuOpen)}
-          >
-            {t('shell.menu')}
-          </Button>
-        </div>
-        <nav id="main-navigation" className="app-nav" aria-label={t('shell.navigation')}>
-          <MenuGroup title={t('shell.nav.home')} items={[{to: '/', label: t('shell.nav.overview')}]} />
-          {reviewItems.length > 0 && <MenuGroup title="İnceleme" items={reviewItems} />}
-          {adminItems.length > 0 && <MenuGroup title="Yönetim" items={adminItems} />}
+      <header className="mobilebar">
+        <Link to="/" className="side-brand" aria-label={`${config.productName} ana sayfa`}>
+          <BrandMark />
+          <span className="side-brand-text" aria-hidden="true">
+            <b>{config.productName}</b>
+          </span>
+        </Link>
+        <button
+          type="button"
+          className="icon-button"
+          aria-expanded={menuOpen}
+          aria-controls="side-menu"
+          onClick={() => setMenuOpen(!menuOpen)}
+        >
+          <Icon name="menu" />
+          <span>{t('shell.menu')}</span>
+        </button>
+      </header>
+      <aside id="side-menu" className="side">
+        <Link to="/" className="side-brand" aria-label={`${config.productName} ana sayfa`}>
+          <BrandMark />
+          <span className="side-brand-text" aria-hidden="true">
+            <b>{config.productName}</b>
+            <small>{t('shell.tagline')}</small>
+          </span>
+        </Link>
+        <button
+          type="button"
+          className="cmdk-trigger"
+          onClick={() => setPaletteOpen(true)}
+          aria-keyshortcuts="Control+K"
+          aria-label="Hızlı geçiş (Ctrl+K)"
+        >
+          <Icon name="search" />
+          <span className="grow">Ara veya git…</span>
+          <kbd>Ctrl K</kbd>
+        </button>
+        <nav className="menu" aria-label={t('shell.navigation')}>
+          {navigation.groups.map((group, index) => (
+            <div key={index} className="menu-group">
+              {group.items.map((item) => (
+                <Link key={item.to} to={item.to} aria-current={isCurrent(item, pathname) ? 'page' : undefined}>
+                  <Icon name={item.icon} />
+                  <span className="grow truncate">{item.label}</span>
+                  {reviewing &&
+                    ((item.to === '/inceleme' && session.kind === 'object') ||
+                      (item.to === '/sql-inceleme' && session.kind === 'script')) && (
+                      <span className="pulse-dot" role="img" aria-label="İnceleme sürüyor" />
+                    )}
+                </Link>
+              ))}
+            </div>
+          ))}
         </nav>
-      </aside>
-      <div className="app-main">
-        <header className="app-topbar">
+        <div className="side-foot">
           <GlobalReviewIndicator />
-          <div className="app-topbar-user push-end">
-            <span>
-              <strong>{user?.display_name || user?.username}</strong>{' '}
-              <span className="subtle">
-                · {user?.is_super_admin ? t('home.overview.superAdmin') : roleLabel(user?.role)}
-              </span>
+          <div className="side-user">
+            <span className="avatar" aria-hidden="true">
+              {initials(displayName)}
             </span>
-            <Button size="sm" onClick={() => void signOut()} disabled={signingOut} busy={signingOut}>
-              {t('auth.session.signOut')}
-            </Button>
+            <span className="side-user-text">
+              <strong className="truncate">{displayName}</strong>
+              <span className="truncate">{role}</span>
+            </span>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => void signOut()}
+              disabled={signingOut}
+              aria-busy={signingOut || undefined}
+              title={t('auth.session.signOut')}
+            >
+              <Icon name="logOut" />
+              <span className="sr-only">{t('auth.session.signOut')}</span>
+            </button>
           </div>
-        </header>
-        <main id="main-content" className="app-content" tabIndex={-1}>
-          <Suspense fallback={<LoadingState />}>
-            <Outlet />
-          </Suspense>
-        </main>
-      </div>
+        </div>
+      </aside>
+      {menuOpen && (
+        <button type="button" className="side-scrim" aria-label="Menüyü kapat" onClick={() => setMenuOpen(false)} />
+      )}
+      <main id="main-content" className="shell-main" tabIndex={-1}>
+        <Suspense fallback={<LoadingState />}>
+          <Outlet />
+        </Suspense>
+      </main>
       <ReviewWindows />
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
     </div>
   );
 }
 
-function MenuGroup({title, items}: {title: string; items: MenuItem[]}) {
-  return (
-    <div className="app-nav-group">
-      <p className="app-nav-title">{title}</p>
-      {items.map((item) => (
-        <NavLink key={item.to} to={item.to} end>
-          <span>{item.label}</span>
-          {item.count !== undefined && item.count > 0 && (
-            <span className="badge badge-warning" aria-label={`${item.count} bekleyen`}>
-              {item.count}
-            </span>
-          )}
-          {item.busy && <span className="pulse-dot" role="img" aria-label="İnceleme sürüyor" />}
-        </NavLink>
-      ))}
-    </div>
-  );
+/** Up to two initials of a display name for the avatar disc; decorative. */
+function initials(name: string): string {
+  const parts = name.trim().split(/[\s._-]+/).filter(Boolean);
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0].toLocaleUpperCase('tr-TR'))
+    .join('');
 }

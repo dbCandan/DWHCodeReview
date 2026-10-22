@@ -120,4 +120,24 @@ describe('review results — rule groups (rule-group-selection Requirement 6)', 
     renderView();
     expect(screen.queryByLabelText('Kural grubu')).toBeNull();
   });
+
+  it('shows the reviewed SQL beside the rules with flagged lines and jumps to a line', () => {
+    // review-history-export Requirement 13: the code view of a run that carries its SQL.
+    const sql = Array.from({length: 14}, (_, index) => `-- satır ${index + 1}`).join('\n');
+    render(<ReviewResultsView results={[liveResult({source_sql: sql})]} runId="run-1" canMark onMarked={vi.fn()} />);
+    const object = screen.getByRole('region', {name: 'DWH · dbo.usp_load'});
+    const code = within(object).getByRole('region', {name: 'İncelenen SQL'});
+    expect(within(code).getByText('14 satır · 1 işaretli satır')).toBeInTheDocument();
+    const line = code.querySelector('[data-line="12"]')!;
+    expect(line.className).toMatch(/is-(high|medium|low)/);
+    expect(line).toHaveTextContent('Kural01');
+    fireEvent.click(screen.getAllByRole('button', {name: 'Satır 12'})[0]);
+    expect(line.className).toContain('is-focus');
+  });
+
+  it('shows no code view when the run carries no SQL', () => {
+    render(<ReviewResultsView results={[liveResult({source_sql: null})]} runId="run-1" canMark onMarked={vi.fn()} />);
+    expect(screen.queryByRole('region', {name: 'İncelenen SQL'})).toBeNull();
+    expect(screen.queryByRole('button', {name: 'Satır 12'})).toBeNull();
+  });
 });

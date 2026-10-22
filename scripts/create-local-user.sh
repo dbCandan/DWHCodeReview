@@ -2,27 +2,27 @@
 set -eu
 
 # Create or reset a local test account for one application role in the local Compose stack.
-# Usage: scripts/create-local-user.sh --role inceleyici|kural-yoneticisi
+# Usage: scripts/create-local-user.sh --role inceleyici
 # The backend refuses the command while the directory is enabled or outside the local environment.
 root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 role=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --role)
-      [ "$#" -ge 2 ] || { echo "--role bir değer ister: inceleyici veya kural-yoneticisi" >&2; exit 2; }
+      [ "$#" -ge 2 ] || { echo "--role bir değer ister: inceleyici" >&2; exit 2; }
       role="$2"
       shift 2
       ;;
     *)
-      echo "kullanım: scripts/create-local-user.sh --role inceleyici|kural-yoneticisi" >&2
+      echo "kullanım: scripts/create-local-user.sh --role inceleyici" >&2
       exit 2
       ;;
   esac
 done
 case "$role" in
-  inceleyici|kural-yoneticisi) ;;
+  inceleyici) ;;
   *)
-    echo "kullanım: scripts/create-local-user.sh --role inceleyici|kural-yoneticisi" >&2
+    echo "kullanım: scripts/create-local-user.sh --role inceleyici" >&2
     exit 2
     ;;
 esac

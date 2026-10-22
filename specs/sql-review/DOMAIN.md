@@ -11,12 +11,10 @@ taşır; mevcut davranış kaynak kabul edilir, farklılıklar PRD'lerde açık�
 ## Aktörler
 
 - **İnceleyici:** Veri ambarı geliştiricisi. Nesne veya metin inceletir, sonuçları görür, dışa aktarır.
-- **Kural yöneticisi:** İnceleyicinin yapabildiklerine ek olarak kuralları düzenler ve yayımlanmak üzere
-  süper yönetici onayına gönderir, LLM çağrı özetlerini görür.
-- **Kural önericisi:** Süper yöneticinin "kural önerebilir" yetkisi verdiği kullanıcı; rolü inceleyici veya
-  kural yöneticisi olabilir. Yeni kural ve kural grubu önerir.
-- **Uygulama yöneticisi (süper yönetici):** Kural önerilerini ve yayın isteklerini onaylar veya reddeder,
-  öneri yetkisini verir; nonprod'da, dağıtım SQL Server bağlantısını vermiyorsa bağlantıyı arayüzden girer. Kimliği ve yetkisi
+- **Kural yöneticisi:** 1.x ile kaldırıldı (directory-login Decision 14); kuralları süper yönetici
+  düzenler ve yayımlar.
+- **Uygulama yöneticisi (süper yönetici):** Kuralları, grupları ve taslağı düzenler ve doğrudan yayımlar;
+  nonprod'da, dağıtım SQL Server bağlantısını vermiyorsa bağlantıyı arayüzden girer. Kimliği ve yetkisi
   `application-foundation` alanındadır.
 - **İşletim ekibi:** Ortam ayarlarını, sırları ve dağıtımı yönetir; uygulama içinde bir rol değildir.
 
@@ -25,11 +23,11 @@ taşır; mevcut davranış kaynak kabul edilir, farklılıklar PRD'lerde açık�
 - **Kural:** Kimliği (`Kural01` biçiminde), ayrıntılı metni, tek cümlelik özeti ve "nesne meta verisi
   gerekir" işaretini taşıyan tek inceleme ölçütü. LLM'e ayrıntılı metin gider; süper yönetici dışındaki
   kullanıcılar kuralı özetiyle görür. Kurallar **kritik** ve **normal** olmak üzere iki öncelik grubundadır.
-- **Kural grubu:** Kural yöneticisinin tanımladığı veya onaylanmış bir öneriyle oluşan adlandırılmış kural
+- **Kural grubu:** Süper yöneticinin tanımladığı adlandırılmış kural
   kümesi (örneğin Performans, Güvenlik). Öncelik grubundan (kritik/normal) ayrı bir boyuttur; bir kural
   sıfır, bir veya daha çok gruba üye olabilir, hiçbir gruba üye olmayan kural "grupsuz"dur. Gruplar kural kümesi sürümüyle birlikte yayımlanır ve donar.
-- **Kural önerisi ve yayın isteği:** Yeni kural veya grup önerisi ile kural yöneticisinin taslağı yayımlama
-  isteği; süper yönetici onaylayınca yayımlanır, reddederse gerekçesi sahibine görünür.
+- **Kural önerisi ve yayın isteği:** (2026-10-19'da [rule-proposals](PRDs/009-rule-proposals/PRD.md) 2.0.0
+  Decision 8 ile kaldırıldı.) Eski kayıtların tabloları geçmiş olarak yerinde kalır.
 - **Kural kümesi:** Kuralların tamamı. Bir **taslak** ve yayımlanmış **sürümler** vardır; inceleme
   yalnız en son yayımlanmış sürümü kullanır.
 - **Nesne:** SQL Server'daki kullanıcı nesnesi: saklı yordam, görünüm, skaler/satır içi/tablo
@@ -69,9 +67,10 @@ PostgreSQL'de: kural kümesi taslağı ve yayımlanmış sürümleri, inceleme k
 bulgular, LLM çağrı özetleri, nonprod'da süper yöneticinin kaydettiği SQL Server bağlantısı (parolası
 şifreli). İncelenen SQL metni (nesne tanımı veya yapıştırılan metin) koşumla
 birlikte saklama süresi boyunca (varsayılan 90 gün) tutulur; yalnız koşumu başlatan kullanıcı,
-`kural-yoneticisi` ve zamanlanmış koşumda o koşumun e-posta alıcısı olan kullanıcı görür. Günlüklere
+süper yönetici ve zamanlanmış koşumda o koşumun e-posta alıcısı olan kullanıcı görür. Günlüklere
 yazılmaz. Ayrıca zamanlanmış inceleme tanımları, çalışma kayıtları, koşumla saklanan alıcı listeleri ve
-kiracı başına zamanlanmış inceleme ayarı; kural önerileri, yayın istekleri ve kural öneri yetkileri.
+kiracı başına zamanlanmış inceleme ayarı; kaldırılmış kural önerisi, yayın isteği ve öneri yetkisi
+tabloları geçmiş olarak yerinde kalır.
 
 ## Harici sınırlar
 

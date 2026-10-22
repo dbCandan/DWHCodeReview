@@ -5,10 +5,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth.dependencies import CurrentContext, require_any_role
+from app.api.auth.dependencies import (
+    CurrentContext,
+    require_any_role,
+    require_super_admin,
+)
 from app.api.validation import envelope_validation_route
 from app.db.session import get_db
-from app.domain.models.role import ROLE_REVIEWER, ROLE_RULE_MANAGER
+from app.domain.models.role import ROLE_REVIEWER
 from app.schemas.rule_set.contracts import (
     RuleSetDraftUpdate,
     RuleSetPublishRequest,
@@ -29,8 +33,9 @@ router = APIRouter(
     responses={401: {"description": "Oturum yok"}, 403: {"description": "Rol yetkisi yok"}},
 )
 
-RuleManager = [Depends(require_any_role(ROLE_RULE_MANAGER))]
-AnyReviewRole = [Depends(require_any_role(ROLE_REVIEWER, ROLE_RULE_MANAGER))]
+# directory-login Decision 14: the draft and publishing are the super admin's.
+RuleManager = [Depends(require_super_admin())]
+AnyReviewRole = [Depends(require_any_role(ROLE_REVIEWER))]
 
 
 def get_rule_set_service(session: Annotated[AsyncSession, Depends(get_db)]) -> RuleSetService:
@@ -74,16 +79,16 @@ async def save_draft(
     dependencies=RuleManager,
     responses={
         200: {"description": "Taslak en son sürümle aynı; var olan sürüm döner"},
-        403: {"description": "Yalnız süper yönetici doğrudan yayımlar (publish_requires_approval)"},
+        403: {"description": "Süper yönetici değil"},
         409: {"description": "Taslak başka biri tarafından değiştirildi"},
     },
 )
 async def publish(
     body: RuleSetPublishRequest, response: Response, context: CurrentContext, service: Service
 ) -> RuleSetVersionDetail:
-    """Publish the draft as the next immutable version; only the super admin (rule-proposals).
+    """Publish the draft as the next immutable version; only the super admin (Decision 14).
 
-    An unchanged draft returns the latest version. A rule manager sends a publish request instead.
+    An unchanged draft returns the latest version.
     """
 
     outcome = await service.publish(context, base_revision=body.base_revision)

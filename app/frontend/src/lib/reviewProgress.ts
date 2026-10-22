@@ -187,6 +187,18 @@ export function completionRatio(progress: LiveProgress): number {
   return Math.min(done / progress.objectsTotal, 1);
 }
 
+/**
+ * One line of progress: rules for a single object (a script, or one object), objects otherwise,
+ * with the object errors when there are any.
+ */
+export function progressLine(progress: LiveProgress): string {
+  const inFlight = Object.values(progress.objects);
+  if (progress.objectsTotal === 1 && inFlight.length === 1 && inFlight[0].rulesTotal > 0)
+    return `${inFlight[0].rulesDone} / ${inFlight[0].rulesTotal} kural tamamlandı`;
+  const failed = progress.objectsFailed > 0 ? ` · ${progress.objectsFailed} nesnede hata` : '';
+  return `${progress.objectsDone} / ${progress.objectsTotal} nesne tamamlandı${failed}`;
+}
+
 export function stageLabel(stage: ObjectStage): string {
   switch (stage) {
     case 'fetch':

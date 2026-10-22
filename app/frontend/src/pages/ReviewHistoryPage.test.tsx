@@ -69,7 +69,7 @@ describe('review history page', () => {
 
   it('lets the rule manager switch to all runs, which are read-only when owned by others', async () => {
     vi.mocked(ReviewService.run).mockResolvedValue(detail({owned: false, owner_display_name: 'Başka Kişi'}));
-    renderWithSession(<ReviewHistoryPage />, {role: 'kural-yoneticisi'});
+    renderWithSession(<ReviewHistoryPage />, {role: 'super_admin'});
     await screen.findByText('DWH · 1 nesne');
     fireEvent.click(screen.getByLabelText('Tüm incelemeler'));
     await waitFor(() => expect(ReviewService.runs).toHaveBeenLastCalledWith('all', 1, 50, expect.any(AbortSignal)));
@@ -101,7 +101,7 @@ describe('review history page', () => {
   it('opens the run named in the address, as a large review asks it to', async () => {
     renderWithSession(<ReviewHistoryPage />, {path: '/gecmis?run=run-1'});
     expect(await screen.findByRole('checkbox', {name: 'Kural01 bulgu 1 yanlış pozitif'})).toBeInTheDocument();
-    expect(ReviewService.run).toHaveBeenCalledWith('run-1', 1, 50, expect.any(AbortSignal));
+    expect(ReviewService.run).toHaveBeenCalledWith('run-1', 1, 50, expect.any(AbortSignal), true);
   });
 
   it('reads a large run page by page and keeps the downloads for the whole run', async () => {
@@ -127,7 +127,7 @@ describe('review history page', () => {
     const detailCard = screen.getByText('1–50 / 120').closest('nav')!;
     fireEvent.click(within(detailCard).getByRole('button', {name: 'Sonraki'}));
     expect(await screen.findByText('51–100 / 120')).toBeInTheDocument();
-    expect(ReviewService.run).toHaveBeenLastCalledWith('run-1', 2, 50, expect.any(AbortSignal));
+    expect(ReviewService.run).toHaveBeenLastCalledWith('run-1', 2, 50, expect.any(AbortSignal), true);
     expect(screen.getByText(/usp_51\b/)).toBeInTheDocument();
   });
 
@@ -150,7 +150,7 @@ describe('review history page', () => {
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', {name: 'Sil'}));
     await screen.findByText('İnceleme silindi.');
     expect(remove).toHaveBeenCalledWith('run-1');
-    expect(ReviewService.runs).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(ReviewService.runs).toHaveBeenCalledTimes(2));
   });
 
   it('deletes all own runs after confirmation and reports the count', async () => {
@@ -230,7 +230,7 @@ describe('review history page — scheduled runs (scheduled-review-email Require
       .mockResolvedValue(detail({id: 'run-mail', kind: 'scheduled', owned: false, owner_display_name: 'Tanım Sahibi'}));
     renderWithSession(<ReviewHistoryPage />, {path: '/gecmis?run=run-mail'});
     expect(await screen.findByText('Bu inceleme başka bir kullanıcıya ait; yalnız okunabilir.')).toBeInTheDocument();
-    expect(read).toHaveBeenCalledWith('run-mail', 1, 50, expect.any(AbortSignal));
+    expect(read).toHaveBeenCalledWith('run-mail', 1, 50, expect.any(AbortSignal), true);
     expect(screen.queryByRole('checkbox', {name: /yanlış pozitif/})).toBeNull();
     expect(screen.getByRole('button', {name: 'CSV indir'})).toBeEnabled();
   });

@@ -2,27 +2,33 @@
 
 Status: Accepted
 
-Version: 1.0.0
+Version: 2.0.0
 
-Acceptance date: 2026-10-14
+Acceptance date: 2026-10-19
 
 Domain: [sql-review](../../DOMAIN.md)
 
 Kabul kaydı: Proje sahibi bu PRD'yi 2026-10-14'te Decision 1–5 ile kabul etti. Kural özetinin veri ve
-gösterim kuralları [rule-management](../001-rule-management/PRD.md) 1.1.0'dadır.
+gösterim kuralları [rule-management](../001-rule-management/PRD.md) 1.1.0'dadır. 1.1.0 revizyonunu
+proje sahibi 2026-10-15'te "herkes onaya yollayabilsin" kararıyla kabul etti (Decision 6): öneri
+yetkisi listesi kalkar, her inceleyici ve kural yöneticisi öneri gönderir. 1.2.0 revizyonunu proje
+sahibi 2026-10-15'te kabul etti (Decision 7): kural yöneticisi rolü kalktığı için yayın isteği akışı
+(Requirement 6) kaldırılır; taslağı yalnız süper yönetici düzenler ve doğrudan yayımlar.
+
+**2.0.0 — yetenek kaldırıldı (2026-10-19, Decision 8):** Proje sahibinin "onay ve öneri kısımlarını tamamen kaldır" talimatıyla kural ve grup önerileri ile onayları tümüyle kalktı. Bu belgedeki Requirement 1–7 ve Acceptance 1–4 artık uygulanmaz; belge, tabloların ve geçmiş kayıtların neden yerinde durduğunu anlatmak için kalır.
 
 ## Amaç
 
-Kural kümesine yapılan her değişiklik süper yöneticinin onayından geçerek yayımlanır. Süper yöneticinin
-yetki verdiği kullanıcılar yeni **kural** ve yeni **kural grubu** önerir; kural yöneticisi taslağını
+Kural kümesine yapılan her değişiklik süper yöneticinin onayından geçerek yayımlanır. Her inceleyici ve
+kural yöneticisi yeni **kural** ve yeni **kural grubu** önerir; kural yöneticisi taslağını
 yayımlamak için **onaya gönderir**. Süper yönetici bekleyen istekleri ayrıntılarıyla görür, onaylar veya
 gerekçesiyle reddeder; onaylanan öneri hemen yeni bir sürüm olarak yayımlanır. Böylece kurallar kurumda
 genişleyebilir, ama yayımlanan her kural tek bir yetkili denetimden geçer.
 
 ## Aktörler ve sonuçlar
 
-- **Kural önericisi:** Süper yöneticinin "kural önerebilir" yetkisi verdiği kullanıcıdır; rolü
-  `inceleyici` veya `kural-yoneticisi` olabilir (Decision 1). Yeni kural (tek cümlelik özet ve ayrıntılı
+- **Kural önericisi:** Rolü `inceleyici` veya `kural-yoneticisi` olan her kullanıcıdır; ayrı bir yetki
+  gerekmez (Decision 6). Yeni kural (tek cümlelik özet ve ayrıntılı
   metinle) ve yayımlanmış kurallardan oluşan yeni kural grubu önerir; kendi önerilerinin durumunu ve ret
   gerekçesini görür; bekleyen önerisini geri çeker. Ölçülebilir sonuç: onaylanan önerisi yeni sürümde
   herkesin kullanımına açılır.
@@ -30,7 +36,7 @@ genişleyebilir, ama yayımlanan her kural tek bir yetkili denetimden geçer.
   ([rule-management](../001-rule-management/PRD.md)), ama yayımlayamaz; taslağı **onaya gönderir**
   (Decision 3). Ölçülebilir sonuç: onaylanan yayın isteği taslağı yeni sürüm olarak yayımlar.
 - **Süper yönetici:** Bekleyen kural önerilerini, grup önerilerini ve yayın isteklerini ayrıntılarıyla
-  görür; onaylar veya gerekçesiyle reddeder; "kural önerebilir" yetkisini verir ve geri alır. Taslağı
+  görür; onaylar veya gerekçesiyle reddeder. Taslağı
   kendisi doğrudan yayımlayabilir. Ölçülebilir sonuç: onayladığı her istek aynı işlemde yayımlanır.
 - **İnceleyici:** Bu PRD ona yeni iş vermez; onaylanan kural ve grupları incelemede kullanır.
 
@@ -53,22 +59,22 @@ genişleyebilir, ama yayımlanan her kural tek bir yetkili denetimden geçer.
   istekten sonra değiştiyse onay `409 publish_request_stale` alır ve istek geçersiz olur.
 - Ret, 1–500 karakter gerekçe ister; gerekçe öneri sahibine görünür. Öneri yalnız `bekliyor` durumunda
   onaylanır, reddedilir veya geri çekilir; sonuçlanmış öneri değişmez.
-- Öneri yetkisi verilmemiş kullanıcının öneri isteği `403` alır. Yetkinin geri alınması bekleyen önerileri
-  silmez; süper yönetici onlar hakkında karar verir.
+- Öneriyi yalnız oturum açmış inceleyici veya kural yöneticisi gönderir; rolsüz kullanıcı `403` alır.
 - Kural metni ve özeti LLM'e yalnız kural olarak gider (bugünkü sınır); öneri gerekçesi, grup adı ve ret
   gerekçesi LLM'e gitmez ve loga yazılmaz.
 - Arayüz yalnız Türkçedir.
 
 ## İşlevsel gereksinimler
 
-Requirement 1: Süper yönetici, kullanıcı listesinden bir kullanıcıya "kural önerebilir" yetkisi verir ve
-geri alır; yetkili kullanıcılar listelenir. Her etkin kullanıcı yetki alabilir.
+Requirement 1: Her inceleyici ve kural yöneticisi öneri gönderebilir; ayrı bir öneri yetkisi ve yetki
+listesi yoktur (Decision 6). `GET /rule-proposals/capabilities` bu kullanıcılara `can_propose: true`
+döndürür.
 
-Requirement 2: Yetkili kullanıcı yeni kural önerisi gönderir (özet, ayrıntılı metin, öncelik, meta veri
+Requirement 2: Kullanıcı yeni kural önerisi gönderir (özet, ayrıntılı metin, öncelik, meta veri
 işareti, isteğe bağlı gruplar ve isteğe bağlı kısa gerekçe). Biçim ve sınır ihlalleri `422` ile, bilinmeyen
 grup `422 rule_group_unknown` ile reddedilir.
 
-Requirement 3: Yetkili kullanıcı yeni grup önerisi gönderir (ad, açıklama, en son yayımlanmış sürümden kural
+Requirement 3: Kullanıcı yeni grup önerisi gönderir (ad, açıklama, en son yayımlanmış sürümden kural
 kodları, isteğe bağlı kısa gerekçe). Mevcut grup adıyla çakışan ad `422 rule_group_name_duplicate`,
 yayımlanmış sürümde olmayan kod `422 rule_unknown`, boş kural listesi `422 proposal_rules_empty` alır.
 
@@ -88,8 +94,8 @@ gerekçesi kural yöneticisine görünür. Kural yöneticisinin doğrudan yayın
 `403 publish_requires_approval` alır; süper yönetici doğrudan yayımlayabilir.
 
 Requirement 7: Süper yöneticinin menüsünde "Kural onayları" sayfası ve bekleyen istek sayısı görünür; sayfa
-kural önerilerini, grup önerilerini ve yayın isteklerini ayrı sekmelerde ve öneri yetkisi listesini
-gösterir. Yetkili kullanıcının menüsünde "Kural önerilerim" sayfası görünür: yeni kural önerisi, yeni grup
+kural önerilerini, grup önerilerini ve yayın isteklerini ayrı sekmelerde gösterir. Her inceleyici ve
+kural yöneticisi "Kural önerilerim" sayfasını görür: yeni kural önerisi, yeni grup
 önerisi ve öneri geçmişi. Kural önerisi formu özet ve ayrıntılı metni ayrı alanlarda ister; grup önerisi
 formu yayımlanmış kuralları özetleriyle aranabilir listede seçtirir. Tüm metinler Türkçedir.
 
@@ -117,12 +123,11 @@ formu yayımlanmış kuralları özetleriyle aranabilir listede seçtirir. Tüm 
   `422 rule_set_empty`.
 - `POST /rule-set/versions` yalnız süper yöneticiye açık kalır; kural yöneticisi
   `403 publish_requires_approval` alır.
-- `GET /rule-proposers`, `PUT /rule-proposers/{user_id}`, `DELETE /rule-proposers/{user_id}` → öneri
-  yetkisi (yalnız süper yönetici).
+- 1.1.0 ile `/rule-proposers` uçları kaldırıldı (Decision 6).
 
 ## Güvenlik ve yetkilendirme
 
-- Onay ve ret yalnız süper yöneticidedir; öneri yetkisini yalnız süper yönetici verir. Denetimler arka uçta
+- Onay ve ret yalnız süper yöneticidedir. Denetimler arka uçta
   her uçta yapılır; menü gizlemek yetki denetimi değildir.
 - Öneri sahibi yalnız kendi önerilerini görür; başkasının önerisi `404`.
 - Onay ve yayın aynı veritabanı işleminde yapılır; taslak ve en son sürüm satır kilidiyle okunur, iki onay
@@ -136,7 +141,8 @@ formu yayımlanmış kuralları özetleriyle aranabilir listede seçtirir. Tüm 
   metin, öncelik, meta veri işareti, grup adı ve açıklaması, kural kodları, grup kimlikleri, gerekçe, karar
   veren, karar zamanı, ret gerekçesi, yayımlanan sürüm, yeni kural kodu), **yayın isteği** (kiracı,
   `public_id`, isteyen, taslak revizyonu, durum, karar veren, karar zamanı, ret gerekçesi, yayımlanan sürüm)
-  ve **kural önericisi** (kiracı, kullanıcı, yetkiyi veren, zaman).
+  ve **kural önericisi** (kiracı, kullanıcı, yetkiyi veren, zaman). 1.1.0 ile kural önericisi tablosu
+  kullanılmaz; geçmiş kayıtlar sessizce silinmesin diye tablo yerinde ve salt okunur kalır.
 - Kural özetinin taslak ve sürüm kurallarındaki sütunu [rule-management](../001-rule-management/PRD.md)
   revizyonundadır ve aynı göçte eklenir.
 - Göç genişleticidir; geri alma, öneri veya yayın isteği kaydı varken veri kaybını bildirip durur.
@@ -162,7 +168,7 @@ formu yayımlanmış kuralları özetleriyle aranabilir listede seçtirir. Tüm 
   `409 proposal_conflict`; yayın isteğinin onayı ve taslak değişince `publish_request_stale`; eşzamanlı iki
   onayda tek sürüm numarası; göçün geri alınması.
 - API: yetkisiz öneri `403`, başkasının önerisine `404`, kural yöneticisinin doğrudan yayınına `403`,
-  onay/retin yalnız süper yöneticide olması, yetki verme ve geri alma.
+  onay/retin yalnız süper yöneticide olması, her inceleyici ve kural yöneticisinin öneri gönderebilmesi.
 - Ön yüz (Vitest): öneri formları (özet ve ayrıntı zorunlu), öneri geçmişi ve durumları, Kural onayları
   sekmeleri, fark görünümü, ret gerekçesi, Kurallar sayfasında "Onaya gönder".
 
@@ -183,17 +189,16 @@ formu yayımlanmış kuralları özetleriyle aranabilir listede seçtirir. Tüm 
 - [ ] Acceptance 2: L1 — Otomatik testlerden geçti: onayla yayımlama, taslağın yayımlanmamış
   değişikliklerinin dışarıda kalması, ret ve geri çekme, çakışmada `409`, bayat yayın isteği ve eşzamanlı
   onay gerçek PostgreSQL testleriyle geçer (Requirement 4, 5, 6); OpenAPI kayıtlı yapıtla aynıdır.
-- [ ] Acceptance 3: L1 — Otomatik testlerden geçti: yetki ve rol denetimleri (`403`, `404`) ve öneri
-  yetkisinin verilip geri alınması testleri geçer (Requirement 1, 2, 6).
-- [ ] Acceptance 4: L2 — Gerçek istemci/ortamda doğrulandı: süper yönetici bir inceleyiciye öneri yetkisi
-  verir; inceleyici özet ve ayrıntıyla kural, ardından o kuralı içeren grup önerir; süper yönetici
+- [ ] Acceptance 3: L1 — Otomatik testlerden geçti: rol denetimleri (`403`, `404`) ve her inceleyici ile
+  kural yöneticisinin yetki almadan öneri gönderebilmesi testleri geçer (Requirement 1, 2, 6).
+- [ ] Acceptance 4: L2 — Gerçek istemci/ortamda doğrulandı: inceleyici yetki almadan özet ve ayrıntıyla kural, ardından o kuralı içeren grup önerir; süper yönetici
   ayrıntıları görüp onaylar ve kural ile grup yeni sürümde yayımlanır; reddedilen öneride gerekçe sahibine
   görünür; kural yöneticisinin yayın isteği onaylanınca taslak yayımlanır (Requirement 1–7).
 
 ## Kararlar
 
-- Decision 1: Kural ve grup önerisi, süper yöneticinin "kural önerebilir" yetkisi verdiği kullanıcılara
-  açıktır; yetki rolden bağımsızdır. Proje sahibinin 2026-10-14 kararı.
+- Decision 1: (1.1.0 ile Decision 6'ya bırakıldı) Kural ve grup önerisi, süper yöneticinin "kural
+  önerebilir" yetkisi verdiği kullanıcılara açıktı. Proje sahibinin 2026-10-14 kararı.
 - Decision 2: Onaylanan öneri hemen yayımlanır: en son yayımlanmış sürüme eklenerek yeni sürüm olur ve
   taslağa da yazılır. Proje sahibinin 2026-10-14 kararı. Gerekçe: tek onayla canlıya geçer; taslaktaki
   onaylanmamış değişiklikler bu yolla yayımlanmaz.
@@ -204,6 +209,25 @@ formu yayımlanmış kuralları özetleriyle aranabilir listede seçtirir. Tüm 
   kullanıcılar kuralları özetleriyle görür ([rule-management](../001-rule-management/PRD.md) Requirement
   12). Proje sahibinin 2026-10-14 kararı.
 - Decision 5: Bu yetenek için yeni ölçüm eklenmez; log olayları yeterlidir.
+- Decision 6: Öneri yetkisi kalkar; her inceleyici ve kural yöneticisi kural ve grup önerisini onaya
+  gönderir. Karar yine yalnız süper yöneticidedir. Proje sahibinin 2026-10-15 kararı ("kuralı eskiden
+  herkes öneremiyordu … herkes yollayabilsin onaya"). Gerekçe: öneri yalnız onaya düşer; yayın yine tek
+  yetkili denetimden geçer.
+- Decision 7: Yayın isteği (Requirement 6) kaldırılır: [directory-login](../../../application-foundation/PRDs/001-directory-login/PRD.md)
+  Decision 14 ile kural yöneticisi rolü kalktı; taslağı süper yönetici düzenler ve doğrudan yayımlar.
+  `/rule-set/publish-requests` uçları ve "Yayın istekleri" sekmesi kalkar; yayın isteği tablosu
+  geçmiş kayıtlar sessizce silinmesin diye yerinde kalır, artık yazılmaz. Kural onaylarında yalnız kural ve grup önerileri kalır. Proje sahibinin
+  2026-10-15 kararı.
+- Decision 8: Kural ve grup önerileri ile onayları kaldırılır. `/rule-proposals` uçları, öneri hizmeti,
+  deposu, şemaları ve kuralları; ön yüzde "Kural önerilerim", "Kural onayları", onay akışı kartları ve
+  menü sayaçları kalkar; e2e 06 senaryosu silinir. Kuralları, grupları ve taslağı yalnız süper yönetici
+  düzenler ve doğrudan yayımlar ([rule-management](../001-rule-management/PRD.md),
+  [directory-login](../../../application-foundation/PRDs/001-directory-login/PRD.md) Decision 14).
+  `rule_proposal`, `rule_publish_request` ve `rule_proposer` tabloları geçmiş kayıtlar sessizce
+  silinmesin diye yerinde kalır, artık okunmaz ve yazılmaz (rules/41); eski adresler
+  (`/kural-onerilerim`, `/kural-onaylari`) kural kitaplığına ve Yönetim'e yönlendirir. Proje
+  sahibinin 2026-10-19 kararı ("onay ve öneri kısımlarını tamamen kaldır"). Gerekçe: küçük ekipte kural değişikliği doğrudan tek
+  yetkiliden geçer; öneri kuyruğu bakım yükü getirir.
 
 ## Açık sorular
 

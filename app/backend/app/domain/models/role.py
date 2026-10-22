@@ -19,12 +19,12 @@ from app.domain.models.mixins import AuditSoftDeleteMixin, new_public_id
 
 SUPER_ADMIN_ROLE = "super_admin"
 
-# application-foundation/PRDs/001-directory-login Decision 4: every user except the super admin
-# holds at most one of these application roles; the rule manager can do everything the reviewer
-# can.
+# application-foundation/PRDs/001-directory-login Decision 4 and 14: every user except the super
+# admin holds the single application role (shown as "Kullanıcı"); rule management, connections and
+# LLM call summaries belong to the super admin. The former 'kural-yoneticisi' role is retired by
+# migration 202610150001.
 ROLE_REVIEWER = "inceleyici"
-ROLE_RULE_MANAGER = "kural-yoneticisi"
-APPLICATION_ROLES = (ROLE_REVIEWER, ROLE_RULE_MANAGER)
+APPLICATION_ROLES = (ROLE_REVIEWER,)
 DEFAULT_DIRECTORY_ROLE = ROLE_REVIEWER
 
 

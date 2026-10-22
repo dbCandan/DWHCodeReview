@@ -11,9 +11,10 @@ from fastapi import APIRouter, Depends, Path, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth.dependencies import CurrentContext, require_any_role
+from app.api.integrations import get_review_registry
 from app.api.validation import envelope_validation_route
 from app.db.session import get_db
-from app.domain.models.role import ROLE_REVIEWER, ROLE_RULE_MANAGER
+from app.domain.models.role import ROLE_REVIEWER
 from app.schemas.review_runs.contracts import (
     DeletedRuns,
     FalsePositiveState,
@@ -21,6 +22,7 @@ from app.schemas.review_runs.contracts import (
     ReviewRunDetail,
     ReviewRunPage,
     ReviewRunScopeValue,
+    RunCancelled,
 )
 from app.services.review_history_service import (
     DEFAULT_PAGE_SIZE,
@@ -30,12 +32,13 @@ from app.services.review_history_service import (
     ExportFile,
     ReviewHistoryService,
 )
+from app.services.review_run_service import ReviewRunRegistry
 
 router = APIRouter(
     prefix="/review-runs",
     tags=["review-runs"],
     route_class=envelope_validation_route(status.HTTP_422_UNPROCESSABLE_CONTENT),
-    dependencies=[Depends(require_any_role(ROLE_REVIEWER, ROLE_RULE_MANAGER))],
+    dependencies=[Depends(require_any_role(ROLE_REVIEWER))],
     responses={401: {"description": "Oturum yok"}, 403: {"description": "Rol yetkisi yok"}},
 )
 
@@ -97,13 +100,15 @@ async def read_review_run(
     service: Service,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_RESULTS_PAGE_SIZE)] = DEFAULT_RESULTS_PAGE_SIZE,
+    with_sql: Annotated[bool, Query()] = False,
 ) -> ReviewRunDetail:
     """One page of the stored objects with their results and false-positive marks.
 
-    Never the SQL text (Requirement 3); ``object_count`` is the total number of objects.
+    The SQL text only with ``with_sql`` (Requirement 3, 13), for the code view; whoever reads
+    the run may download the same text as the SQL export. ``object_count`` is the total.
     """
 
-    return await service.detail(context, run_id, page=page, page_size=page_size)
+    return await service.detail(context, run_id, page=page, page_size=page_size, with_sql=with_sql)
 
 
 @router.delete(
@@ -116,6 +121,26 @@ async def delete_review_run(run_id: RunId, context: CurrentContext, service: Ser
 
     await service.delete_run(context, run_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{run_id}/cancel",
+    response_model=RunCancelled,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        **_OWNER_ONLY,
+        409: {"description": "review_run_not_running: koşum bitmiş"},
+    },
+)
+async def cancel_review_run(
+    run_id: RunId,
+    context: CurrentContext,
+    service: Service,
+    registry: Annotated[ReviewRunRegistry, Depends(get_review_registry)],
+) -> RunCancelled:
+    """ "Analizi durdur": stop a running run of the caller (the super admin: any run)."""
+
+    return await service.cancel_run(context, run_id, registry)
 
 
 @router.put(

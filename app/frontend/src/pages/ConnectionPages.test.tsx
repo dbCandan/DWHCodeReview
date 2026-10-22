@@ -52,7 +52,7 @@ describe('SQL connection page', () => {
       configured: true,
       managed_by: 'deployment',
     });
-    renderWithSession(<SqlConnectionPage />, {role: 'kural-yoneticisi'});
+    renderWithSession(<SqlConnectionPage />, {role: 'super_admin'});
     expect(await screen.findByText('Bu ortamda bağlantı ayarları dağıtımla yönetilir.')).toBeInTheDocument();
     expect(screen.queryByLabelText('Sunucu adı')).toBeNull();
     expect(screen.queryByRole('button', {name: 'Kaydet'})).toBeNull();
@@ -65,7 +65,7 @@ describe('SQL connection page', () => {
       configured: false,
       managed_by: 'super_admin',
     });
-    renderWithSession(<SqlConnectionPage />, {role: 'kural-yoneticisi'});
+    renderWithSession(<SqlConnectionPage />, {role: 'super_admin'});
     expect(
       await screen.findByText('Bu ortamda SQL bağlantısını yalnız uygulama yöneticisi düzenleyebilir.'),
     ).toBeInTheDocument();
@@ -138,7 +138,7 @@ describe('SQL connection page', () => {
 
   it('keeps both encryption choices editable in the local environment and shows no database list', async () => {
     vi.spyOn(ConnectionService, 'sql').mockResolvedValue(sqlLocal);
-    renderWithSession(<SqlConnectionPage />, {role: 'kural-yoneticisi'});
+    renderWithSession(<SqlConnectionPage />, {role: 'super_admin'});
     expect(await screen.findByLabelText('Şifreli bağlantı (Encrypt)')).toBeChecked();
     expect(screen.getByLabelText(/TrustServerCertificate/)).not.toBeChecked();
     expect(screen.queryByText(/İzinli veritabanları/)).toBeNull();
@@ -153,7 +153,7 @@ describe('LLM connection page', () => {
       chat_api: 'openai',
       model: '/data/models--Qwen',
     });
-    renderWithSession(<LlmConnectionPage />, {role: 'kural-yoneticisi'});
+    renderWithSession(<LlmConnectionPage />, {role: 'super_admin'});
     expect(await screen.findByText('Bu ortamda bağlantı ayarları dağıtımla yönetilir.')).toBeInTheDocument();
     expect(screen.getByText('/data/models--Qwen')).toBeInTheDocument();
     expect(screen.queryByLabelText('Temel adres')).toBeNull();
@@ -162,7 +162,7 @@ describe('LLM connection page', () => {
   it('saves format, addresses and model; an empty key field keeps the stored key', async () => {
     vi.spyOn(ConnectionService, 'llm').mockResolvedValue(llmLocal);
     const save = vi.spyOn(ConnectionService, 'saveLlm').mockResolvedValue({...llmLocal, model: 'yeni'});
-    renderWithSession(<LlmConnectionPage />, {role: 'kural-yoneticisi'});
+    renderWithSession(<LlmConnectionPage />, {role: 'super_admin'});
     expect(await screen.findByText('http://10.0.0.5:1234/v1/chat/completions')).toBeInTheDocument();
     expect(screen.queryByText(/vekil|proxy/i)).toBeNull();
     fireEvent.change(screen.getByLabelText('Model'), {target: {value: 'yeni'}});
@@ -179,7 +179,7 @@ describe('LLM connection page', () => {
   it('shows the class message when the address is outside the internal network', async () => {
     vi.spyOn(ConnectionService, 'llm').mockResolvedValue(llmLocal);
     vi.spyOn(ConnectionService, 'saveLlm').mockRejectedValue(apiError(422, 'network_policy_denied'));
-    renderWithSession(<LlmConnectionPage />, {role: 'kural-yoneticisi'});
+    renderWithSession(<LlmConnectionPage />, {role: 'super_admin'});
     fireEvent.change(await screen.findByLabelText('Temel adres'), {target: {value: 'https://api.example.com/v1'}});
     fireEvent.click(screen.getByRole('button', {name: 'Kaydet'}));
     await waitFor(() =>

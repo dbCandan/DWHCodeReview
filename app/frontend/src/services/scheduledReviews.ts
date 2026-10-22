@@ -1,11 +1,14 @@
 import {apiRequest} from '@/lib/apiClient';
 import type {
+  ScheduledEmailStatus,
+  ScheduledEmailTestResult,
   ScheduledReviewDetail,
   ScheduledReviewPage,
   ScheduledReviewSettings,
   ScheduledReviewWrite,
   ScheduledRunPage,
   ScheduledRunQueued,
+  ScheduledRunStopped,
 } from '@/types/sqlReview';
 
 const BASE = '/scheduled-reviews';
@@ -40,6 +43,10 @@ export const ScheduledReviewService = {
   runNow(id: string): Promise<ScheduledRunQueued> {
     return apiRequest<ScheduledRunQueued>(`${one(id)}/run`, {method: 'POST'});
   },
+  /** Durdur: end the queued or running run of a definition (Requirement 11). */
+  stop(id: string): Promise<ScheduledRunStopped> {
+    return apiRequest<ScheduledRunStopped>(`${one(id)}/stop`, {method: 'POST'});
+  },
   runs(id: string, page: number, pageSize: number, signal?: AbortSignal): Promise<ScheduledRunPage> {
     return apiRequest<ScheduledRunPage>(`${one(id)}/runs?page=${page}&page_size=${pageSize}`, {signal});
   },
@@ -50,6 +57,16 @@ export const ScheduledReviewService = {
     return apiRequest<ScheduledReviewSettings>('/scheduled-review-settings', {
       method: 'PUT',
       body: JSON.stringify(body),
+    });
+  },
+  /** Whether the summary e-mail can leave this deployment (Requirement 10). */
+  emailStatus(signal?: AbortSignal): Promise<ScheduledEmailStatus> {
+    return apiRequest<ScheduledEmailStatus>('/scheduled-review-settings/email', {signal});
+  },
+  sendTestEmail(recipient: string): Promise<ScheduledEmailTestResult> {
+    return apiRequest<ScheduledEmailTestResult>('/scheduled-review-settings/email/test', {
+      method: 'POST',
+      body: JSON.stringify({recipient}),
     });
   },
 };

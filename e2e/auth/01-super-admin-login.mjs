@@ -15,7 +15,7 @@ await withBrowser(
 
     await signIn(page, accounts.superAdmin);
     await page.waitForURL(baseUrl + "/");
-    await page.getByRole("heading", { name: "DWH Code Review" }).waitFor();
+    await page.getByRole("heading", { name: "ReviewX" }).waitFor();
 
     // directory-login Requirement 6-7: no token or session copy in browser storage, and the
     // refresh cookie is HttpOnly (invisible to page scripts).
@@ -60,7 +60,7 @@ await withBrowser(
 
     // Reload drops the in-memory token; the session comes back through the refresh cookie.
     await page.reload();
-    await page.getByRole("heading", { name: "DWH Code Review" }).waitFor();
+    await page.getByRole("heading", { name: "ReviewX" }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/");
 
     await page.getByRole("button", { name: message("auth.session.signOut") }).click();

@@ -161,7 +161,50 @@ class ScheduledRunQueued(BaseModel):
     state: Literal["queued"] = "queued"
 
 
+class ScheduledRunStopped(BaseModel):
+    id: str = Field(description="public_id of the stopped run record.")
+    state: Literal["cancelling", "cancelled"] = Field(
+        description="'cancelling' = the running review was told to stop and ends as cancelled; "
+        "'cancelled' = the run had not started or no task ran for it, so it ended at once."
+    )
+
+
 class ScheduledReviewSettings(BaseModel):
     max_concurrent_runs: int = Field(
         description="Scheduled runs allowed at the same time in the tenant, 1-10 (Decision 8)."
+    )
+
+
+EmailTestStatusValue = Literal["sent", "failed", "not_configured"]
+
+
+class ScheduledEmailStatus(BaseModel):
+    """Whether the summary e-mail can leave this deployment (Requirement 10, Decision 13)."""
+
+    scheduler_enabled: bool = Field(description="The in-process scheduler runs in this deployment.")
+    smtp_configured: bool = Field(description="The SMTP relay host and the sender are set.")
+    smtp_security: Literal["starttls", "tls"] = Field(description="Encryption the relay must use.")
+    allowed_domains: list[str] = Field(description="Corporate domains a recipient may use.")
+    suggested_recipient: str | None = Field(
+        description="The caller's own address when its domain is allowed; otherwise null."
+    )
+
+
+class ScheduledEmailTest(BaseModel):
+    recipient: str = Field(
+        min_length=3,
+        max_length=_TRANSPORT_TEXT_MAX_LENGTH,
+        description="One corporate address that receives the test e-mail (Decision 14).",
+    )
+
+
+class ScheduledEmailTestResult(BaseModel):
+    status: EmailTestStatusValue = Field(
+        description="'sent' = the relay accepted it; 'failed' = see error_code; "
+        "'not_configured' = no SMTP relay in this deployment."
+    )
+    error_code: str | None = Field(
+        default=None,
+        description="Stable failure code such as smtp_unreachable, smtp_tls_failed, "
+        "smtp_auth_failed, smtp_rejected, smtp_address_not_allowed or smtp_failed.",
     )

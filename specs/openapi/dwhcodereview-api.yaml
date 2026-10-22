@@ -41,10 +41,7 @@
           "role": {
             "anyOf": [
               {
-                "enum": [
-                  "inceleyici",
-                  "kural-yoneticisi"
-                ],
+                "const": "inceleyici",
                 "type": "string"
               },
               {
@@ -148,36 +145,6 @@
         ],
         "type": "object"
       },
-      "ChangedGroup": {
-        "properties": {
-          "after": {
-            "$ref": "#/components/schemas/RuleGroupItem"
-          },
-          "before": {
-            "$ref": "#/components/schemas/RuleGroupItem"
-          }
-        },
-        "required": [
-          "before",
-          "after"
-        ],
-        "type": "object"
-      },
-      "ChangedRule": {
-        "properties": {
-          "after": {
-            "$ref": "#/components/schemas/DiffRuleItem"
-          },
-          "before": {
-            "$ref": "#/components/schemas/DiffRuleItem"
-          }
-        },
-        "required": [
-          "before",
-          "after"
-        ],
-        "type": "object"
-      },
       "CompleteEvent": {
         "properties": {
           "phase": {
@@ -229,19 +196,6 @@
           "page",
           "page_size",
           "total"
-        ],
-        "type": "object"
-      },
-      "DecisionReason": {
-        "properties": {
-          "reason": {
-            "description": "Rejection reason, 1-500 characters after trimming; shown to the requester.",
-            "maxLength": 1000,
-            "type": "string"
-          }
-        },
-        "required": [
-          "reason"
         ],
         "type": "object"
       },
@@ -303,51 +257,6 @@
         },
         "required": [
           "deleted_count"
-        ],
-        "type": "object"
-      },
-      "DiffRuleItem": {
-        "properties": {
-          "id": {
-            "description": "KuralNN code.",
-            "maxLength": 32,
-            "type": "string"
-          },
-          "priority": {
-            "enum": [
-              "critical",
-              "normal"
-            ],
-            "type": "string"
-          },
-          "requires_metadata": {
-            "default": false,
-            "type": "boolean"
-          },
-          "rule_group_ids": {
-            "description": "The rule's named groups in the draft's or version's group order; empty for an ungrouped rule. A rule may belong to several groups.",
-            "items": {
-              "maxLength": 64,
-              "type": "string"
-            },
-            "maxItems": 100,
-            "type": "array"
-          },
-          "summary": {
-            "default": "",
-            "description": "One-sentence summary shown instead of the text to everyone but the super admin, at most 200 characters on one line; empty when not given (rule-management Requirement 12).",
-            "maxLength": 400,
-            "type": "string"
-          },
-          "text": {
-            "maxLength": 16000,
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "text",
-          "priority"
         ],
         "type": "object"
       },
@@ -1356,6 +1265,17 @@
           "schema": {
             "type": "string"
           },
+          "source_sql": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The reviewed SQL text; in the history only when asked for with with_sql (review-history-export Requirement 13), null when it was not stored."
+          },
           "type_code": {
             "type": "string"
           }
@@ -1521,235 +1441,6 @@
           "schema",
           "name",
           "type_code"
-        ],
-        "type": "object"
-      },
-      "PublishRequestCreate": {
-        "properties": {
-          "base_revision": {
-            "description": "The draft revision the rule manager saw.",
-            "minimum": 0.0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "base_revision"
-        ],
-        "type": "object"
-      },
-      "PublishRequestDetail": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "decided_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "decided_by_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "diff": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RuleSetDiffView"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Draft against the latest version while the request is pending; else empty."
-          },
-          "draft_changed": {
-            "description": "True while pending when the draft changed after the request; approving fails.",
-            "type": "boolean"
-          },
-          "draft_revision": {
-            "type": "integer"
-          },
-          "id": {
-            "description": "public_id of the publish request.",
-            "type": "string"
-          },
-          "owned": {
-            "type": "boolean"
-          },
-          "published_version_number": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "rejection_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "requester_name": {
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "bekliyor",
-              "onaylandi",
-              "reddedildi",
-              "gecersiz"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "status",
-          "requester_name",
-          "created_at",
-          "draft_revision",
-          "draft_changed",
-          "decided_by_name",
-          "decided_at",
-          "rejection_reason",
-          "published_version_number",
-          "owned",
-          "diff"
-        ],
-        "type": "object"
-      },
-      "PublishRequestItem": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "decided_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "decided_by_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "draft_changed": {
-            "description": "True while pending when the draft changed after the request; approving fails.",
-            "type": "boolean"
-          },
-          "draft_revision": {
-            "type": "integer"
-          },
-          "id": {
-            "description": "public_id of the publish request.",
-            "type": "string"
-          },
-          "owned": {
-            "type": "boolean"
-          },
-          "published_version_number": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "rejection_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "requester_name": {
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "bekliyor",
-              "onaylandi",
-              "reddedildi",
-              "gecersiz"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "status",
-          "requester_name",
-          "created_at",
-          "draft_revision",
-          "draft_changed",
-          "decided_by_name",
-          "decided_at",
-          "rejection_reason",
-          "published_version_number",
-          "owned"
-        ],
-        "type": "object"
-      },
-      "PublishRequestPage": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/PublishRequestItem"
-            },
-            "type": "array"
-          },
-          "page": {
-            "type": "integer"
-          },
-          "page_size": {
-            "type": "integer"
-          },
-          "total": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "page",
-          "page_size",
-          "total"
         ],
         "type": "object"
       },
@@ -2107,21 +1798,6 @@
           }
         ]
       },
-      "RoleChange": {
-        "properties": {
-          "role": {
-            "enum": [
-              "inceleyici",
-              "kural-yoneticisi"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "role"
-        ],
-        "type": "object"
-      },
       "RuleDoneEvent": {
         "properties": {
           "completion_tokens": {
@@ -2283,442 +1959,6 @@
         ],
         "type": "object"
       },
-      "RuleProposalCapabilities": {
-        "properties": {
-          "can_decide": {
-            "description": "The caller decides proposals and publish requests.",
-            "type": "boolean"
-          },
-          "can_propose": {
-            "description": "The caller may send rule and group proposals.",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "can_propose",
-          "can_decide"
-        ],
-        "type": "object"
-      },
-      "RuleProposalCreate": {
-        "description": "A new-rule (``kind=rule``) or new-group (``kind=group``) proposal; fields by kind.",
-        "properties": {
-          "group_description": {
-            "default": "",
-            "maxLength": 500,
-            "type": "string"
-          },
-          "group_name": {
-            "default": "",
-            "maxLength": 160,
-            "type": "string"
-          },
-          "kind": {
-            "enum": [
-              "rule",
-              "group"
-            ],
-            "type": "string"
-          },
-          "priority": {
-            "default": "normal",
-            "enum": [
-              "critical",
-              "normal"
-            ],
-            "type": "string"
-          },
-          "rationale": {
-            "default": "",
-            "description": "Optional short reason; it must not contain personal data or passwords.",
-            "maxLength": 500,
-            "type": "string"
-          },
-          "requires_metadata": {
-            "default": false,
-            "type": "boolean"
-          },
-          "rule_codes": {
-            "description": "Group: KuralNN codes of the latest published version the group holds.",
-            "items": {
-              "maxLength": 16,
-              "minLength": 1,
-              "type": "string"
-            },
-            "maxItems": 200,
-            "type": "array"
-          },
-          "rule_group_ids": {
-            "description": "Rule: published groups the new rule joins.",
-            "items": {
-              "maxLength": 64,
-              "minLength": 1,
-              "type": "string"
-            },
-            "maxItems": 50,
-            "type": "array"
-          },
-          "summary": {
-            "default": "",
-            "description": "Rule: one-sentence summary, 1-200 characters on one line.",
-            "maxLength": 400,
-            "type": "string"
-          },
-          "text": {
-            "default": "",
-            "description": "Rule: detailed rule text sent to the LLM once approved, 1-8000 characters.",
-            "maxLength": 16000,
-            "type": "string"
-          }
-        },
-        "required": [
-          "kind"
-        ],
-        "type": "object"
-      },
-      "RuleProposalDetail": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "decided_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "decided_by_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "group_description": {
-            "type": "string"
-          },
-          "group_name": {
-            "description": "Group: the proposed name; empty for a rule.",
-            "type": "string"
-          },
-          "id": {
-            "description": "public_id of the proposal.",
-            "type": "string"
-          },
-          "kind": {
-            "enum": [
-              "rule",
-              "group"
-            ],
-            "type": "string"
-          },
-          "new_rule_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "KuralNN code an approved rule received."
-          },
-          "owned": {
-            "description": "True when the caller sent the proposal.",
-            "type": "boolean"
-          },
-          "priority": {
-            "anyOf": [
-              {
-                "enum": [
-                  "critical",
-                  "normal"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "proposer_name": {
-            "type": "string"
-          },
-          "published_version_number": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "rationale": {
-            "type": "string"
-          },
-          "rejection_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "requires_metadata": {
-            "type": "boolean"
-          },
-          "rule_codes": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "rule_group_ids": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "status": {
-            "enum": [
-              "bekliyor",
-              "onaylandi",
-              "reddedildi",
-              "geri_cekildi"
-            ],
-            "type": "string"
-          },
-          "summary": {
-            "description": "Rule: the proposed summary; empty for a group.",
-            "type": "string"
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "status",
-          "proposer_name",
-          "created_at",
-          "summary",
-          "group_name",
-          "decided_by_name",
-          "decided_at",
-          "rejection_reason",
-          "published_version_number",
-          "new_rule_id",
-          "owned",
-          "text",
-          "priority",
-          "requires_metadata",
-          "rule_group_ids",
-          "group_description",
-          "rule_codes",
-          "rationale"
-        ],
-        "type": "object"
-      },
-      "RuleProposalItem": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "decided_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "decided_by_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "group_name": {
-            "description": "Group: the proposed name; empty for a rule.",
-            "type": "string"
-          },
-          "id": {
-            "description": "public_id of the proposal.",
-            "type": "string"
-          },
-          "kind": {
-            "enum": [
-              "rule",
-              "group"
-            ],
-            "type": "string"
-          },
-          "new_rule_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "KuralNN code an approved rule received."
-          },
-          "owned": {
-            "description": "True when the caller sent the proposal.",
-            "type": "boolean"
-          },
-          "proposer_name": {
-            "type": "string"
-          },
-          "published_version_number": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "rejection_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "status": {
-            "enum": [
-              "bekliyor",
-              "onaylandi",
-              "reddedildi",
-              "geri_cekildi"
-            ],
-            "type": "string"
-          },
-          "summary": {
-            "description": "Rule: the proposed summary; empty for a group.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "status",
-          "proposer_name",
-          "created_at",
-          "summary",
-          "group_name",
-          "decided_by_name",
-          "decided_at",
-          "rejection_reason",
-          "published_version_number",
-          "new_rule_id",
-          "owned"
-        ],
-        "type": "object"
-      },
-      "RuleProposalPage": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/RuleProposalItem"
-            },
-            "type": "array"
-          },
-          "page": {
-            "type": "integer"
-          },
-          "page_size": {
-            "type": "integer"
-          },
-          "total": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "page",
-          "page_size",
-          "total"
-        ],
-        "type": "object"
-      },
-      "RuleProposerItem": {
-        "properties": {
-          "display_name": {
-            "type": "string"
-          },
-          "granted_at": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "granted_by_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "user_id": {
-            "description": "public_id of the user.",
-            "type": "string"
-          },
-          "username": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "user_id",
-          "username",
-          "display_name",
-          "granted_by_name",
-          "granted_at"
-        ],
-        "type": "object"
-      },
-      "RuleProposerList": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/RuleProposerItem"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "type": "object"
-      },
       "RuleResultItem": {
         "properties": {
           "code_snippet": {
@@ -2801,56 +2041,6 @@
           "line_reference",
           "code_snippet",
           "false_positive"
-        ],
-        "type": "object"
-      },
-      "RuleSetDiffView": {
-        "description": "The draft against the latest published version (rule-proposals Requirement 6).",
-        "properties": {
-          "added_groups": {
-            "items": {
-              "$ref": "#/components/schemas/RuleGroupItem"
-            },
-            "type": "array"
-          },
-          "added_rules": {
-            "items": {
-              "$ref": "#/components/schemas/DiffRuleItem"
-            },
-            "type": "array"
-          },
-          "changed_groups": {
-            "items": {
-              "$ref": "#/components/schemas/ChangedGroup"
-            },
-            "type": "array"
-          },
-          "changed_rules": {
-            "items": {
-              "$ref": "#/components/schemas/ChangedRule"
-            },
-            "type": "array"
-          },
-          "removed_groups": {
-            "items": {
-              "$ref": "#/components/schemas/RuleGroupItem"
-            },
-            "type": "array"
-          },
-          "removed_rules": {
-            "items": {
-              "$ref": "#/components/schemas/DiffRuleItem"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "added_rules",
-          "changed_rules",
-          "removed_rules",
-          "added_groups",
-          "changed_groups",
-          "removed_groups"
         ],
         "type": "object"
       },
@@ -3220,6 +2410,28 @@
         ],
         "type": "object"
       },
+      "RunCancelled": {
+        "description": "Answer of a stop request; the run is stored as cancelled when its task has ended.",
+        "properties": {
+          "id": {
+            "description": "public_id of the run.",
+            "type": "string"
+          },
+          "status": {
+            "description": "'cancelling' = the running task was told to stop; 'cancelled' = no task ran for it in this process, so the run was ended as cancelled at once.",
+            "enum": [
+              "cancelling",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object"
+      },
       "RunStartedEvent": {
         "properties": {
           "all_rules": {
@@ -3322,6 +2534,95 @@
           "frequency",
           "hour",
           "minute"
+        ],
+        "type": "object"
+      },
+      "ScheduledEmailStatus": {
+        "description": "Whether the summary e-mail can leave this deployment (Requirement 10, Decision 13).",
+        "properties": {
+          "allowed_domains": {
+            "description": "Corporate domains a recipient may use.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "scheduler_enabled": {
+            "description": "The in-process scheduler runs in this deployment.",
+            "type": "boolean"
+          },
+          "smtp_configured": {
+            "description": "The SMTP relay host and the sender are set.",
+            "type": "boolean"
+          },
+          "smtp_security": {
+            "description": "Encryption the relay must use.",
+            "enum": [
+              "starttls",
+              "tls"
+            ],
+            "type": "string"
+          },
+          "suggested_recipient": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The caller's own address when its domain is allowed; otherwise null."
+          }
+        },
+        "required": [
+          "scheduler_enabled",
+          "smtp_configured",
+          "smtp_security",
+          "allowed_domains",
+          "suggested_recipient"
+        ],
+        "type": "object"
+      },
+      "ScheduledEmailTest": {
+        "properties": {
+          "recipient": {
+            "description": "One corporate address that receives the test e-mail (Decision 14).",
+            "maxLength": 1000,
+            "minLength": 3,
+            "type": "string"
+          }
+        },
+        "required": [
+          "recipient"
+        ],
+        "type": "object"
+      },
+      "ScheduledEmailTestResult": {
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stable failure code such as smtp_unreachable, smtp_tls_failed, smtp_auth_failed, smtp_rejected, smtp_address_not_allowed or smtp_failed."
+          },
+          "status": {
+            "description": "'sent' = the relay accepted it; 'failed' = see error_code; 'not_configured' = no SMTP relay in this deployment.",
+            "enum": [
+              "sent",
+              "failed",
+              "not_configured"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
         ],
         "type": "object"
       },
@@ -3814,6 +3115,27 @@
         ],
         "type": "object"
       },
+      "ScheduledRunStopped": {
+        "properties": {
+          "id": {
+            "description": "public_id of the stopped run record.",
+            "type": "string"
+          },
+          "state": {
+            "description": "'cancelling' = the running review was told to stop and ends as cancelled; 'cancelled' = the run had not started or no task ran for it, so it ended at once.",
+            "enum": [
+              "cancelling",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state"
+        ],
+        "type": "object"
+      },
       "ScriptReviewRequest": {
         "properties": {
           "label": {
@@ -4195,10 +3517,7 @@
           "role": {
             "anyOf": [
               {
-                "enum": [
-                  "inceleyici",
-                  "kural-yoneticisi"
-                ],
+                "const": "inceleyici",
                 "type": "string"
               },
               {
@@ -4429,79 +3748,6 @@
           }
         ],
         "summary": "Set Active",
-        "tags": [
-          "user-administration"
-        ]
-      }
-    },
-    "/api/dwhcodereview/v1/admin/users/{public_id}/role": {
-      "put": {
-        "description": "Assign 'inceleyici' or 'kural-yoneticisi'; repeating the same value changes nothing.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "public_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RoleChange"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RoleChange"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "description": "Ge\u00e7ersiz istek de\u011feri"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "S\u00fcper y\u00f6netici de\u011fil"
-          },
-          "404": {
-            "description": "Kullan\u0131c\u0131 yok"
-          },
-          "409": {
-            "description": "S\u00fcper y\u00f6netici"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "Set Role",
         "tags": [
           "user-administration"
         ]
@@ -4914,7 +4160,7 @@
             "description": "Oturum yok"
           },
           "403": {
-            "description": "Kural y\u00f6neticisi de\u011fil"
+            "description": "S\u00fcper y\u00f6netici de\u011fil"
           },
           "422": {
             "content": {
@@ -4968,7 +4214,7 @@
             "description": "Oturum yok"
           },
           "403": {
-            "description": "Kural y\u00f6neticisi de\u011fil"
+            "description": "S\u00fcper y\u00f6netici de\u011fil"
           },
           "404": {
             "description": "\u00d6zet yok"
@@ -5014,7 +4260,7 @@
             "description": "Oturum yok"
           },
           "403": {
-            "description": "Kural y\u00f6neticisi de\u011fil"
+            "description": "S\u00fcper y\u00f6netici de\u011fil"
           }
         },
         "security": [
@@ -5055,7 +4301,7 @@
             "description": "Oturum yok"
           },
           "403": {
-            "description": "Kural y\u00f6neticisi de\u011fil"
+            "description": "S\u00fcper y\u00f6netici de\u011fil"
           },
           "422": {
             "description": "Ge\u00e7ersiz adres veya kurum a\u011f\u0131 d\u0131\u015f\u0131 hedef"
@@ -5332,7 +4578,7 @@
         ]
       },
       "get": {
-        "description": "One page of the stored objects with their results and false-positive marks.\n\nNever the SQL text (Requirement 3); ``object_count`` is the total number of objects.",
+        "description": "One page of the stored objects with their results and false-positive marks.\n\nThe SQL text only with ``with_sql`` (Requirement 3, 13), for the code view; whoever reads\nthe run may download the same text as the SQL export. ``object_count`` is the total.",
         "parameters": [
           {
             "in": "path",
@@ -5363,6 +4609,15 @@
               "maximum": 200,
               "minimum": 1,
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "with_sql",
+            "required": false,
+            "schema": {
+              "default": false,
+              "type": "boolean"
             }
           }
         ],
@@ -5404,6 +4659,67 @@
           }
         ],
         "summary": "Read Review Run",
+        "tags": [
+          "review-runs"
+        ]
+      }
+    },
+    "/api/dwhcodereview/v1/review-runs/{run_id}/cancel": {
+      "post": {
+        "description": "\"Analizi durdur\": stop a running run of the caller (the super admin: any run).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunCancelled"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Oturum yok"
+          },
+          "403": {
+            "description": "Ko\u015fumun sahibi de\u011fil"
+          },
+          "404": {
+            "description": "Ko\u015fum yok, s\u00fcresi dolmu\u015f veya g\u00f6rme yetkisi yok"
+          },
+          "409": {
+            "description": "review_run_not_running: ko\u015fum bitmi\u015f"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": [],
+            "tenant": []
+          }
+        ],
+        "summary": "Cancel Review Run",
         "tags": [
           "review-runs"
         ]
@@ -5687,525 +5003,6 @@
         ]
       }
     },
-    "/api/dwhcodereview/v1/rule-proposals": {
-      "get": {
-        "description": "The caller's proposals; ``pending`` and ``all`` are the super admin's.",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "scope",
-            "required": false,
-            "schema": {
-              "default": "mine",
-              "enum": [
-                "mine",
-                "pending",
-                "all"
-              ],
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "page",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "minimum": 1,
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "page_size",
-            "required": false,
-            "schema": {
-              "default": 20,
-              "maximum": 100,
-              "minimum": 1,
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RuleProposalPage"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "List Proposals",
-        "tags": [
-          "rule-proposals"
-        ]
-      },
-      "post": {
-        "description": "Propose a new rule or a new group of published rules (Requirement 2, 3).",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RuleProposalCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RuleProposalDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "Create Proposal",
-        "tags": [
-          "rule-proposals"
-        ]
-      }
-    },
-    "/api/dwhcodereview/v1/rule-proposals/capabilities": {
-      "get": {
-        "description": "Whether the caller may propose and decide; the menu uses it (Requirement 7).",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RuleProposalCapabilities"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "Read Capabilities",
-        "tags": [
-          "rule-proposals"
-        ]
-      }
-    },
-    "/api/dwhcodereview/v1/rule-proposals/{proposal_id}": {
-      "get": {
-        "description": "One proposal; only its proposer and the super admin see it.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "proposal_id",
-            "required": true,
-            "schema": {
-              "maxLength": 64,
-              "minLength": 1,
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RuleProposalDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "Read Proposal",
-        "tags": [
-          "rule-proposals"
-        ]
-      }
-    },
-    "/api/dwhcodereview/v1/rule-proposals/{proposal_id}/approve": {
-      "post": {
-        "description": "Publish the proposal as a new version and write it to the draft (Requirement 5).",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "proposal_id",
-            "required": true,
-            "schema": {
-              "maxLength": 64,
-              "minLength": 1,
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RuleProposalDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "Approve Proposal",
-        "tags": [
-          "rule-proposals"
-        ]
-      }
-    },
-    "/api/dwhcodereview/v1/rule-proposals/{proposal_id}/reject": {
-      "post": {
-        "description": "Reject a pending proposal with a reason its proposer sees (Requirement 5).",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "proposal_id",
-            "required": true,
-            "schema": {
-              "maxLength": 64,
-              "minLength": 1,
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DecisionReason"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RuleProposalDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "Reject Proposal",
-        "tags": [
-          "rule-proposals"
-        ]
-      }
-    },
-    "/api/dwhcodereview/v1/rule-proposals/{proposal_id}/withdraw": {
-      "post": {
-        "description": "The proposer withdraws a pending proposal (Requirement 4).",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "proposal_id",
-            "required": true,
-            "schema": {
-              "maxLength": 64,
-              "minLength": 1,
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RuleProposalDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "Withdraw Proposal",
-        "tags": [
-          "rule-proposals"
-        ]
-      }
-    },
-    "/api/dwhcodereview/v1/rule-proposers": {
-      "get": {
-        "description": "Users holding the \"kural \u00f6nerebilir\" permission (Requirement 1).",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RuleProposerList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "List Proposers",
-        "tags": [
-          "rule-proposals"
-        ]
-      }
-    },
-    "/api/dwhcodereview/v1/rule-proposers/{user_id}": {
-      "delete": {
-        "description": "Revoke the permission; the user's pending proposals stay for a decision.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "Revoke Proposer",
-        "tags": [
-          "rule-proposals"
-        ]
-      },
-      "put": {
-        "description": "Grant the permission to an active user of the tenant.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "Grant Proposer",
-        "tags": [
-          "rule-proposals"
-        ]
-      }
-    },
     "/api/dwhcodereview/v1/rule-set": {
       "get": {
         "description": "The draft, its change counter and the latest published version (Requirement 1).",
@@ -6295,319 +5092,6 @@
         ]
       }
     },
-    "/api/dwhcodereview/v1/rule-set/publish-requests": {
-      "get": {
-        "description": "Publish requests: all for the super admin, the caller's own for a rule manager.",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "enum": [
-                    "bekliyor",
-                    "onaylandi",
-                    "reddedildi",
-                    "gecersiz"
-                  ],
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          {
-            "in": "query",
-            "name": "page",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "minimum": 1,
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "page_size",
-            "required": false,
-            "schema": {
-              "default": 20,
-              "maximum": 100,
-              "minimum": 1,
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublishRequestPage"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "List Publish Requests",
-        "tags": [
-          "rule-proposals"
-        ]
-      },
-      "post": {
-        "description": "Send the current draft revision for approval; it replaces a pending request.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PublishRequestCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublishRequestDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "Create Publish Request",
-        "tags": [
-          "rule-proposals"
-        ]
-      }
-    },
-    "/api/dwhcodereview/v1/rule-set/publish-requests/{request_id}": {
-      "get": {
-        "description": "One request with the draft's difference from the latest version while pending.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "request_id",
-            "required": true,
-            "schema": {
-              "maxLength": 64,
-              "minLength": 1,
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublishRequestDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "Read Publish Request",
-        "tags": [
-          "rule-proposals"
-        ]
-      }
-    },
-    "/api/dwhcodereview/v1/rule-set/publish-requests/{request_id}/approve": {
-      "post": {
-        "description": "Publish the requested draft revision; a changed draft makes the request stale.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "request_id",
-            "required": true,
-            "schema": {
-              "maxLength": 64,
-              "minLength": 1,
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublishRequestDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "Approve Publish Request",
-        "tags": [
-          "rule-proposals"
-        ]
-      }
-    },
-    "/api/dwhcodereview/v1/rule-set/publish-requests/{request_id}/reject": {
-      "post": {
-        "description": "Reject a pending publish request with a reason the rule manager sees.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "request_id",
-            "required": true,
-            "schema": {
-              "maxLength": 64,
-              "minLength": 1,
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DecisionReason"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublishRequestDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Oturum yok"
-          },
-          "403": {
-            "description": "Yetki yok"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": [],
-            "tenant": []
-          }
-        ],
-        "summary": "Reject Publish Request",
-        "tags": [
-          "rule-proposals"
-        ]
-      }
-    },
     "/api/dwhcodereview/v1/rule-set/versions": {
       "get": {
         "description": "Published versions, newest first.",
@@ -6674,7 +5158,7 @@
         ]
       },
       "post": {
-        "description": "Publish the draft as the next immutable version; only the super admin (rule-proposals).\n\nAn unchanged draft returns the latest version. A rule manager sends a publish request instead.",
+        "description": "Publish the draft as the next immutable version; only the super admin (Decision 14).\n\nAn unchanged draft returns the latest version.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -6703,7 +5187,7 @@
             "description": "Oturum yok"
           },
           "403": {
-            "description": "Yaln\u0131z s\u00fcper y\u00f6netici do\u011frudan yay\u0131mlar (publish_requires_approval)"
+            "description": "S\u00fcper y\u00f6netici de\u011fil"
           },
           "409": {
             "description": "Taslak ba\u015fka biri taraf\u0131ndan de\u011fi\u015ftirildi"
@@ -6894,6 +5378,88 @@
           }
         ],
         "summary": "Update Scheduled Review Settings",
+        "tags": [
+          "scheduled-reviews"
+        ]
+      }
+    },
+    "/api/dwhcodereview/v1/scheduled-review-settings/email": {
+      "get": {
+        "description": "Whether the summary e-mail can leave this deployment (Requirement 10).",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledEmailStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Oturum yok"
+          },
+          "403": {
+            "description": "Rol yetkisi yok"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": [],
+            "tenant": []
+          }
+        ],
+        "summary": "Read Scheduled Email Status",
+        "tags": [
+          "scheduled-reviews"
+        ]
+      }
+    },
+    "/api/dwhcodereview/v1/scheduled-review-settings/email/test": {
+      "post": {
+        "description": "Send one test message to one corporate address through the SMTP relay (Decision 14).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduledEmailTest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledEmailTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Oturum yok"
+          },
+          "403": {
+            "description": "Rol yetkisi yok"
+          },
+          "422": {
+            "description": "recipient_invalid veya recipient_domain_not_allowed"
+          },
+          "429": {
+            "description": "email_test_too_soon"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": [],
+            "tenant": []
+          }
+        ],
+        "summary": "Send Scheduled Test Email",
         "tags": [
           "scheduled-reviews"
         ]
@@ -7431,6 +5997,67 @@
         ]
       }
     },
+    "/api/dwhcodereview/v1/scheduled-reviews/{schedule_id}/stop": {
+      "post": {
+        "description": "Durdur: end the definition's queued or running run (owner or super admin).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledRunStopped"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Oturum yok"
+          },
+          "403": {
+            "description": "Rol yetkisi yok"
+          },
+          "404": {
+            "description": "Tan\u0131m yok veya g\u00f6rme yetkisi yok"
+          },
+          "409": {
+            "description": "scheduled_review_not_running: s\u0131rada veya s\u00fcren ko\u015fum yok"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": [],
+            "tenant": []
+          }
+        ],
+        "summary": "Stop Scheduled Review Run",
+        "tags": [
+          "scheduled-reviews"
+        ]
+      }
+    },
     "/api/dwhcodereview/v1/script-reviews": {
       "post": {
         "description": "Review pasted SQL text with live progress; SQL Server is never contacted.",
@@ -7504,7 +6131,7 @@
             "description": "Oturum yok"
           },
           "403": {
-            "description": "Kural y\u00f6neticisi de\u011fil"
+            "description": "S\u00fcper y\u00f6netici de\u011fil"
           }
         },
         "security": [
@@ -7545,7 +6172,7 @@
             "description": "Oturum yok"
           },
           "403": {
-            "description": "Yerelde kural y\u00f6neticisi, nonprod'da s\u00fcper y\u00f6netici de\u011fil"
+            "description": "S\u00fcper y\u00f6netici de\u011fil"
           },
           "404": {
             "description": "Ba\u011flant\u0131 bu ortamda da\u011f\u0131t\u0131mla y\u00f6netilir"
@@ -7597,7 +6224,7 @@
             "description": "Oturum yok"
           },
           "403": {
-            "description": "Yerelde kural y\u00f6neticisi, nonprod'da s\u00fcper y\u00f6netici de\u011fil"
+            "description": "S\u00fcper y\u00f6netici de\u011fil"
           },
           "404": {
             "description": "Ba\u011flant\u0131 bu ortamda da\u011f\u0131t\u0131mla y\u00f6netilir"

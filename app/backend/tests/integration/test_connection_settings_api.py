@@ -535,10 +535,9 @@ async def test_nonprod_other_roles_cannot_see_or_change_the_stored_connection(
 ) -> None:
     replica, _ = stored_replicas
     admin = await _admin_headers(auth, super_admin)
-    manager = await role_sessions.rule_manager()
     reviewer = await role_sessions.reviewer()
     prefix = auth.prefix
-    tenant_only = {auth.settings.tenant_header: manager.headers[auth.settings.tenant_header]}
+    tenant_only = {auth.settings.tenant_header: reviewer.headers[auth.settings.tenant_header]}
     body = {
         "server": "sql-dwh.corp.example.test",
         "user": "dwh_okuyucu",
@@ -548,7 +547,6 @@ async def test_nonprod_other_roles_cannot_see_or_change_the_stored_connection(
         await replica.client.put(f"{prefix}/sql-connection", json=body, headers=admin)
     ).is_success
 
-    as_manager = await replica.client.get(f"{prefix}/sql-connection", headers=manager.headers)
     as_reviewer = await replica.client.get(f"{prefix}/sql-connection", headers=reviewer.headers)
     denied = [
         await replica.client.request(
@@ -557,7 +555,7 @@ async def test_nonprod_other_roles_cannot_see_or_change_the_stored_connection(
             json={**body, "trust_server_certificate": True},
             headers=headers,
         )
-        for headers in (manager.headers, reviewer.headers)
+        for headers in (reviewer.headers,)
         for method, path in (("PUT", "/sql-connection"), ("POST", "/sql-connection/test"))
     ]
     anonymous = [
@@ -569,14 +567,9 @@ async def test_nonprod_other_roles_cannot_see_or_change_the_stored_connection(
         )
     ]
 
-    assert as_manager.json() == {
-        "environment": "nonprod",
-        "editable": False,
-        "configured": True,
-        "managed_by": "super_admin",
-    }
+    # directory-login Decision 14: no other role manages connections; a user gets 403.
     assert as_reviewer.status_code == 403
-    assert [response.status_code for response in denied] == [403, 403, 403, 403]
+    assert [response.status_code for response in denied] == [403, 403]
     assert {response.json()["detail"]["code"] for response in denied} == {"forbidden"}
     assert [response.status_code for response in anonymous] == [401, 401, 401]
     assert replica.driver.connection_strings == []

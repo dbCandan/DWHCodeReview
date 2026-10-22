@@ -8,7 +8,7 @@ Rancher kümesinde tek chart ile çalışır.
 
 ## Aktörler
 
-- **Kullanıcı:** Active Directory hesabıyla giriş yapan inceleyici veya kural yöneticisi.
+- **Kullanıcı:** Active Directory hesabıyla giriş yapan, `inceleyici` rolündeki kişi.
 - **Uygulama yöneticisi:** Rol atamalarını yapan süper yönetici.
 - **İşletim ekibi:** Azure dağıtım işini, gizli değişkenleri ve küme kaynaklarını yönetir.
 
@@ -16,7 +16,7 @@ Rancher kümesinde tek chart ile çalışır.
 
 - **Dizin girişi:** Kullanıcı adı ve parolanın LDAPS üzerinden Active Directory'de doğrulanması.
   Kullanıcı eşitleme ve dizinde arama yoktur.
-- **Rol:** `inceleyici` veya `kural-yoneticisi`.
+- **Rol:** `inceleyici` (arayüzde "Kullanıcı"); diğer yetkiler süper yöneticidedir (directory-login Decision 14).
 - **Runtime Secret:** Nonprod'da uygulama sırlarını taşıyan Kubernetes Secret'ı
   (`dwhcodereview-runtime`); `helm/dwhcodereview/deploy-hooks.sh` hazırlar: oturum imza anahtarını
   ve ayar şifreleme anahtarını bir kez üretir, verilmişse isteğe bağlı Azure gizli değişkenlerini

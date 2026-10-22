@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 AccountTypeValue = Literal["local", "directory"]
-ApplicationRoleValue = Literal["inceleyici", "kural-yoneticisi"]
+ApplicationRoleValue = Literal["inceleyici"]
 
 
 class AuthenticatedUser(BaseModel):

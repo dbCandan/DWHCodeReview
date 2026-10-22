@@ -13,7 +13,6 @@ from fastapi.params import Depends as DependsParameter
 
 from app.api.auth.dependencies import (
     CurrentContext,
-    require_any_role,
     require_super_admin,
 )
 from app.api.integrations import (
@@ -23,7 +22,6 @@ from app.api.integrations import (
 )
 from app.api.route_classes import MethodScopedRoute
 from app.core.config import Settings, get_settings
-from app.domain.models.role import ROLE_RULE_MANAGER
 from app.domain.sql_server import SqlConnectionProbe
 from app.schemas.sql_connection.contracts import (
     SqlConnectionChange,
@@ -38,11 +36,11 @@ from app.services.sql_connection_service import (
 
 _READ_RESPONSES: dict[int | str, dict[str, str]] = {
     401: {"description": "Oturum yok"},
-    403: {"description": "Kural yöneticisi değil"},
+    403: {"description": "Süper yönetici değil"},
 }
 _WRITE_RESPONSES: dict[int | str, dict[str, str]] = {
     401: {"description": "Oturum yok"},
-    403: {"description": "Yerelde kural yöneticisi, nonprod'da süper yönetici değil"},
+    403: {"description": "Süper yönetici değil"},
     404: {"description": "Bağlantı bu ortamda dağıtımla yönetilir"},
 }
 _INVALID: dict[int | str, dict[str, str]] = {
@@ -65,7 +63,7 @@ router = APIRouter(
     prefix="/sql-connection",
     tags=["sql-connection"],
     route_class=MethodScopedRoute,
-    dependencies=[Depends(require_any_role(ROLE_RULE_MANAGER))],
+    dependencies=[Depends(require_super_admin())],
     responses=_READ_RESPONSES,
 )
 
@@ -119,5 +117,5 @@ def _write_router(guard: DependsParameter) -> APIRouter:
     return writer
 
 
-local_router = _write_router(Depends(require_any_role(ROLE_RULE_MANAGER)))
+local_router = _write_router(Depends(require_super_admin()))
 stored_router = _write_router(Depends(require_super_admin()))

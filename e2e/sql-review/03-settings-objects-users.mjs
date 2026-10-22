@@ -1,4 +1,5 @@
 import {withBrowser, baseUrl, accounts, message, signIn, apiStatus} from '../shared/harness.mjs';
+import {mainMenu, openAdminSection, openReview} from './navigation.mjs';
 
 /**
  * sql-server-connection Acceptance 4 (the parts without a reachable SQL Server), object-review
@@ -7,12 +8,10 @@ import {withBrowser, baseUrl, accounts, message, signIn, apiStatus} from '../sha
  */
 await withBrowser('connection pages, object review errors and user administration', async ({page, assert, newPage}) => {
   const manager = page;
-  await signIn(manager, accounts.ruleManager);
-  const nav = manager.getByRole('navigation', {name: message('shell.navigation')});
+  await signIn(manager, accounts.superAdmin);
 
-  // Local environment: both connection pages are in the menu and editable.
-  await nav.getByRole('link', {name: 'SQL bağlantısı'}).click();
-  await manager.getByRole('heading', {name: 'SQL bağlantısı', level: 1}).waitFor();
+  // Local environment: both connection sections are on the Yönetim page and editable.
+  await openAdminSection(manager, 'SQL bağlantısı');
   await manager.getByText(/yalnız çalışan sunucu sürecine uygulanır/).waitFor();
   assert.equal(await manager.getByText(/backend\/\.env dosyasına yazılır/).count(), 0);
   // Test without saving: the local network has no route to SQL Server, so a fixed class message
@@ -29,42 +28,39 @@ await withBrowser('connection pages, object review errors and user administratio
   assert.equal(stored.body.configured, false);
   assert.equal(stored.body.server, '');
 
-  await nav.getByRole('link', {name: 'LLM bağlantısı'}).click();
-  await manager.getByRole('heading', {name: 'LLM bağlantısı', level: 1}).waitFor();
+  await openAdminSection(manager, 'LLM bağlantısı');
   assert.equal(await manager.getByText(/vekil|proxy/i).count(), 0);
 
-  await nav.getByRole('link', {name: 'LLM çağrıları'}).click();
-  await manager.getByRole('heading', {name: 'LLM çağrıları', level: 1}).waitFor();
+  await openAdminSection(manager, 'LLM çağrıları');
   await manager.getByRole('heading', {name: /Çağrı özetleri/}).waitFor();
 
   // Reviewer: without a SQL Server connection the object page explains it and offers a retry.
   const reviewer = await newPage();
   await signIn(reviewer, accounts.reviewer);
-  const reviewerNav = reviewer.getByRole('navigation', {name: message('shell.navigation')});
-  for (const name of ['SQL bağlantısı', 'LLM bağlantısı', 'LLM çağrıları', 'Kullanıcılar'])
+  const reviewerNav = mainMenu(reviewer);
+  for (const name of ['Yönetim', 'SQL bağlantısı', 'LLM bağlantısı', 'LLM çağrıları', 'Kullanıcılar'])
     assert.equal(await reviewerNav.getByRole('link', {name}).count(), 0, `${name} is hidden from the reviewer`);
   assert.equal((await apiStatus(reviewer, '/sql-connection')).status, 403);
-  await reviewerNav.getByRole('link', {name: 'Nesne incelemesi'}).click();
+  await openReview(reviewer, 'Nesneler', 'Nesne incelemesi');
   await reviewer.getByRole('alert').filter({hasText: 'SQL Server bağlantısı yapılandırılmamış.'}).waitFor();
   await reviewer.getByRole('button', {name: 'Listeyi yenile'}).waitFor();
   assert.equal(await reviewer.getByRole('button', {name: 'İnceleme için en az bir nesne seçin'}).isDisabled(), true);
 
-  // Super admin: change the second reviewer's role and status, then restore both.
+  // Super admin: deactivate the second user, who is signed out and cannot sign in; then restore.
   const admin = await newPage();
   await signIn(admin, accounts.superAdmin);
-  await admin.getByRole('navigation', {name: message('shell.navigation')}).getByRole('link', {name: 'Kullanıcılar'}).click();
+  await openAdminSection(admin, 'Kullanıcılar');
   const target = accounts.secondReviewer.username;
   const other = await newPage();
   await signIn(other, accounts.secondReviewer);
-  const role = admin.getByRole('combobox', {name: `${target} rolü`});
+  // directory-login Decision 14: there is no role to choose; everyone else is a user.
+  assert.equal(await admin.getByRole('combobox', {name: `${target} rolü`}).count(), 0);
   try {
-    await role.selectOption('kural-yoneticisi');
-    await admin.getByText(`${target} için rol “Kural yöneticisi” oldu.`).waitFor();
-    // The role change closed the user's refresh sessions (directory-login Requirement 5).
-    const refreshed = await other.evaluate(async () => (await fetch('/api/dwhcodereview/v1/auth/refresh', {method: 'POST'})).status);
-    assert.equal(refreshed, 401);
     await admin.getByRole('button', {name: `${target} hesabını pasifleştir`}).click();
     await admin.getByText(`${target} hesabı pasifleştirildi.`).waitFor();
+    // Deactivation closed the user's refresh sessions (directory-login Requirement 5).
+    const refreshed = await other.evaluate(async () => (await fetch('/api/dwhcodereview/v1/auth/refresh', {method: 'POST'})).status);
+    assert.equal(refreshed, 401);
     await other.goto(baseUrl + '/login');
     await other.getByLabel(message('auth.login.username')).fill(target);
     await other.getByLabel(message('auth.login.password')).fill(accounts.secondReviewer.password);
@@ -74,10 +70,6 @@ await withBrowser('connection pages, object review errors and user administratio
     if (await admin.getByRole('button', {name: `${target} hesabını etkinleştir`}).count()) {
       await admin.getByRole('button', {name: `${target} hesabını etkinleştir`}).click();
       await admin.getByText(`${target} hesabı etkinleştirildi.`).waitFor();
-    }
-    if ((await role.inputValue()) !== 'inceleyici') {
-      await role.selectOption('inceleyici');
-      await admin.getByText(`${target} için rol “İnceleyici” oldu.`).waitFor();
     }
   }
 }, {

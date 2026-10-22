@@ -37,7 +37,7 @@ iskeletini ve etkin satır kısmi indeksini taşır (rules/41).
 | Göç | `schema/alembic/versions/202610140001_rule_proposals.py` | Veri ve geçiş |
 | Sözleşme | `specs/openapi/dwhcodereview-api.yaml`, üretilmiş `app/frontend/src/types/api.d.ts` | API sözleşmesi |
 | Ön yüz | `app/frontend/src/services/ruleProposals.ts`, `app/frontend/src/pages/RuleProposalsPage.tsx` ("Kural önerilerim"), `app/frontend/src/pages/RuleApprovalsPage.tsx` ("Kural onayları"), `app/frontend/src/components/rules/RuleSetDiff.tsx`, `app/frontend/src/pages/RulesPage.tsx` ("Onaya gönder"), `app/frontend/src/components/layout/AppShell.tsx` (menü ve bekleyen sayı), `app/frontend/src/App.tsx` (rotalar) | Requirement 6, 7 |
-| Tarayıcı senaryosu | `e2e/sql-review/06-rule-proposals.mjs`, `e2e/sql-review/01-rules-and-roles.mjs` (onaylı yayın) | Acceptance 4 |
+| Tarayıcı senaryosu | (2.0.0 Decision 8 ile kaldırıldı) `e2e/sql-review/06-rule-proposals.mjs` | Acceptance 4 |
 
 ## Uygulama kararları
 

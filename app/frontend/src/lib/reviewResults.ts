@@ -1,5 +1,5 @@
 import type {Tone as BadgeTone} from '@/lib/utils';
-import type {Finding, ObjectResult, RuleResult} from '@/types/sqlReview';
+import type {Finding, ObjectResult, ReviewRunStatus, RuleResult} from '@/types/sqlReview';
 
 export type RuleStatus = RuleResult['status'];
 export type Severity = NonNullable<RuleResult['severity']>;
@@ -152,3 +152,12 @@ export function applyFalsePositive<T extends ObjectResult>(
 export function hasStoredSql(completed: boolean, results: Pick<ObjectResult, 'error_code'>[]): boolean {
   return completed && results.some((result) => result.error_code === null);
 }
+
+/** How a stored run's status reads in the history and on the home page. */
+export const RUN_STATUS: Record<ReviewRunStatus, {label: string; tone: BadgeTone}> = {
+  running: {label: 'Sürüyor', tone: 'warning'},
+  completed: {label: 'Tamamlandı', tone: 'success'},
+  failed: {label: 'Hata', tone: 'danger'},
+  cancelled: {label: 'Durduruldu', tone: 'neutral'},
+  interrupted: {label: 'Yarıda kesildi', tone: 'warning'},
+};

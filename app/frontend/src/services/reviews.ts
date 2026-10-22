@@ -7,6 +7,7 @@ import type {
   ReviewRunDetail,
   ReviewRunPage,
   ReviewStreamEvent,
+  RunCancelled,
 } from '@/types/sqlReview';
 
 export type ReviewEventHandler = (event: ReviewStreamEvent) => void;
@@ -82,12 +83,20 @@ export const ReviewService = {
   runs(scope: 'mine' | 'all', page: number, pageSize: number, signal?: AbortSignal): Promise<ReviewRunPage> {
     return apiRequest<ReviewRunPage>(`/review-runs?scope=${scope}&page=${page}&page_size=${pageSize}`, {signal});
   },
-  /** One page of the stored objects of a run with their results. */
-  run(runId: string, page: number, pageSize: number, signal?: AbortSignal): Promise<ReviewRunDetail> {
+  /**
+   * One page of the stored objects of a run with their results; `withSql` adds each object's
+   * reviewed SQL for the code view (review-history-export Requirement 13).
+   */
+  run(runId: string, page: number, pageSize: number, signal?: AbortSignal, withSql = false): Promise<ReviewRunDetail> {
+    const sql = withSql ? '&with_sql=true' : '';
     return apiRequest<ReviewRunDetail>(
-      `/review-runs/${encodeURIComponent(runId)}?page=${page}&page_size=${pageSize}`,
+      `/review-runs/${encodeURIComponent(runId)}?page=${page}&page_size=${pageSize}${sql}`,
       {signal},
     );
+  },
+  /** "Analizi durdur" by request (object-review Requirement 15, Decision 9). */
+  cancelRun(runId: string): Promise<RunCancelled> {
+    return apiRequest<RunCancelled>(`/review-runs/${encodeURIComponent(runId)}/cancel`, {method: 'POST'});
   },
   deleteRun(runId: string): Promise<void> {
     return apiRequest<void>(`/review-runs/${encodeURIComponent(runId)}`, {method: 'DELETE'});

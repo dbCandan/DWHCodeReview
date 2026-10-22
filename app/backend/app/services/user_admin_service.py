@@ -81,37 +81,6 @@ class UserAdminService:
             total=total,
         )
 
-    async def set_role(
-        self, context: RequestContext, target_public_id: UUID, role_code: ApplicationRoleValue
-    ) -> ApplicationRoleValue:
-        tenant = await active_tenant(self.users, context)
-        actor = await self._acting_super_admin(context)
-        target = await self._target(target_public_id, tenant)
-        roles = await self.users.role_codes(target)
-        if SUPER_ADMIN_ROLE in roles:
-            raise _super_admin_protected()
-        current = application_role_of(roles)
-        if current == role_code:
-            return role_code
-        role = await self.users.get_role(role_code)
-        if role is None:  # pragma: no cover - the migration seeds both roles
-            raise RuntimeError("application role is missing; run the migrations")
-        now = datetime.now(UTC)
-        await self.users.set_application_role(target, role, actor_user_id=actor.user_id, now=now)
-        target.updated_by = actor.user_id
-        await self._record_change(
-            tenant, actor, target, UserChangeField.ROLE, old=current, new=role_code, now=now
-        )
-        log_event(
-            logger,
-            "admin.user.role_changed",
-            actor_public_id=actor.public_id,
-            target_public_id=target.public_id,
-            old_value=current,
-            new_value=role_code,
-        )
-        return role_code
-
     async def set_active(
         self, context: RequestContext, target_public_id: UUID, active: bool
     ) -> bool:

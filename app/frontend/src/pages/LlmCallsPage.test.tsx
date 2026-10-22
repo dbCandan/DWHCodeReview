@@ -29,7 +29,7 @@ describe('LLM calls page', () => {
   it('lists summaries with model, duration and outcome and opens one', async () => {
     vi.spyOn(ConnectionService, 'llmCalls').mockResolvedValue({items: [call], limit: 100, total: 1});
     const one = vi.spyOn(ConnectionService, 'llmCall').mockResolvedValue(call);
-    renderWithSession(<LlmCallsPage />, {role: 'kural-yoneticisi'});
+    renderWithSession(<LlmCallsPage />, {role: 'super_admin'});
     const table = await screen.findByRole('table');
     expect(within(table).getByText('qwen')).toBeInTheDocument();
     expect(within(table).getByText('Zaman aşımı')).toBeInTheDocument();
@@ -42,7 +42,7 @@ describe('LLM calls page', () => {
 
   it('asks for more rows when the limit changes', async () => {
     vi.spyOn(ConnectionService, 'llmCalls').mockResolvedValue({items: [], limit: 100, total: 0});
-    renderWithSession(<LlmCallsPage />, {role: 'kural-yoneticisi'});
+    renderWithSession(<LlmCallsPage />, {role: 'super_admin'});
     expect(await screen.findByText('Henüz LLM çağrısı yok.')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Gösterilen'), {target: {value: '500'}});
     await waitFor(() => expect(ConnectionService.llmCalls).toHaveBeenLastCalledWith(500, expect.any(AbortSignal)));

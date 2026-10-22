@@ -71,3 +71,10 @@ kanıtıdır.
   kalır. [Kural grubu seçimi Task 5](../007-rule-group-selection/tasks.md) ile birlikte yapılır. Kanıt:
   `app/backend/tests/unit/test_review_export.py` ek vakaları. Yerel `pytest` geçti (2026-10-14); `e2e/sql-review/02-script-review-history.mjs` CSV
   beklentisi `rule_group` sütunuyla güncellendi ve yerel önizlemede geçti.
+
+## 1.6.0 revizyonu (2026-10-16)
+
+- [x] T-R13.1 Requirement 13, Decision 10: `GET /review-runs/{id}?with_sql=true` nesnelerin SQL metnini
+  döndürür (`ObjectResultItem.source_sql`, varsayılan `null`); ön yüz geçmiş ayrıntısında kod görünümü.
+- [x] T-R13.2 Acceptance 7: `test_the_detail_carries_the_sql_only_on_request` ve Vitest.
+

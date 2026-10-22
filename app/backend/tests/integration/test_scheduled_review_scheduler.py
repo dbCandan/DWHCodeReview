@@ -335,6 +335,32 @@ async def test_an_overlapping_trigger_is_skipped_while_the_previous_run_continue
     assert (await scheduled.records(schedule_id))[0].state == "completed"
 
 
+async def test_the_owner_stops_a_running_run_and_no_e_mail_goes_out(
+    scheduled: Scheduled,
+) -> None:
+    # Requirement 11, Decision 15: "Durdur" cuts the running review like "Analizi durdur".
+    schedule_id = await scheduled.define()
+    await scheduled.make_due(schedule_id)
+    scheduled.env.llm.gate = asyncio.Event()
+    scheduler = scheduled.scheduler()
+    await scheduler.tick()
+    await asyncio.wait_for(scheduled.env.llm.started.wait(), 5)
+
+    auth = scheduled.env.auth
+    stopped = await auth.client.post(
+        f"{auth.prefix}/scheduled-reviews/{schedule_id}/stop", headers=scheduled.owner.headers
+    )
+    assert stopped.status_code == 202, stopped.text
+    assert stopped.json()["state"] == "cancelling"
+    await asyncio.wait_for(scheduler.drain(), 10)
+
+    [record] = await scheduled.records(schedule_id)
+    assert (record.state, record.email_status) == ("cancelled", None)
+    assert (await _run_of(record)).status == "cancelled"
+    assert scheduled.mailer.sent == []
+    assert (await scheduled.definition(schedule_id)).status == "active"
+
+
 async def test_a_due_time_missed_while_down_is_recorded_and_not_caught_up(
     scheduled: Scheduled,
 ) -> None:

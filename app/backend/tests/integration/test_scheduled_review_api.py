@@ -157,7 +157,7 @@ async def test_only_the_owner_and_the_super_admin_see_and_change_a_definition(
     owner = await role_sessions.reviewer()
     definition = (await auth.client.post(_url(auth), json=_body(), headers=owner.headers)).json()
     path = f"/{definition['id']}"
-    for stranger in (await role_sessions.reviewer(), await role_sessions.rule_manager()):
+    for stranger in (await role_sessions.reviewer(), await role_sessions.reviewer()):
         assert (
             await auth.client.get(_url(auth, path), headers=stranger.headers)
         ).status_code == 404
@@ -228,6 +228,39 @@ async def test_only_the_super_admin_runs_a_definition_now_and_never_twice_at_onc
         None,
     )
     assert record["triggered_by_name"]
+
+
+async def test_the_owner_stops_a_queued_run_and_nothing_else_is_stopped(
+    schedules: AuthHarness, role_sessions: RoleSessions, super_admin: SuperAdmin
+) -> None:
+    # Requirement 11: "Durdur" ends the queued or running run of a definition.
+    auth = schedules
+    owner = await role_sessions.reviewer()
+    definition = (await auth.client.post(_url(auth), json=_body(), headers=owner.headers)).json()
+    stop_path = _url(auth, f"/{definition['id']}/stop")
+    idle = await auth.client.post(stop_path, headers=owner.headers)
+    assert idle.status_code == 409
+    assert idle.json()["detail"]["code"] == "scheduled_review_not_running"
+
+    admin = await _admin_headers(auth, super_admin)
+    queued = (await auth.client.post(_url(auth, f"/{definition['id']}/run"), headers=admin)).json()
+    stranger = await role_sessions.reviewer()
+    assert (await auth.client.post(stop_path, headers=stranger.headers)).status_code == 404
+    stopped = await auth.client.post(stop_path, headers=owner.headers)
+    assert stopped.status_code == 202, stopped.text
+    assert stopped.json() == {"id": queued["id"], "state": "cancelled"}
+
+    history = (
+        await auth.client.get(_url(auth, f"/{definition['id']}/runs"), headers=owner.headers)
+    ).json()
+    assert [record["state"] for record in history["items"]] == ["cancelled"]
+    # The definition stays active and can run again.
+    detail = (
+        await auth.client.get(_url(auth, f"/{definition['id']}"), headers=owner.headers)
+    ).json()
+    assert detail["status"] == "active"
+    again = await auth.client.post(_url(auth, f"/{definition['id']}/run"), headers=admin)
+    assert again.status_code == 202
 
 
 async def test_the_concurrency_setting_is_the_super_admins_and_stays_in_range(

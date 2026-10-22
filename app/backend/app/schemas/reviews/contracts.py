@@ -137,6 +137,11 @@ class ObjectResultItem(BaseModel):
     parse_warning: str | None
     rule_results: list[RuleResultItem]
     findings: list[FindingItem]
+    source_sql: str | None = Field(
+        default=None,
+        description="The reviewed SQL text; in the history only when asked for with with_sql "
+        "(review-history-export Requirement 13), null when it was not stored.",
+    )
 
     model_config = {"populate_by_name": True}
 

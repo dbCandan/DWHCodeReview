@@ -71,3 +71,13 @@ class FalsePositiveState(BaseModel):
 
 class DeletedRuns(BaseModel):
     deleted_count: int
+
+
+class RunCancelled(BaseModel):
+    """Answer of a stop request; the run is stored as cancelled when its task has ended."""
+
+    id: str = Field(description="public_id of the run.")
+    status: Literal["cancelling", "cancelled"] = Field(
+        description="'cancelling' = the running task was told to stop; 'cancelled' = no task ran "
+        "for it in this process, so the run was ended as cancelled at once."
+    )

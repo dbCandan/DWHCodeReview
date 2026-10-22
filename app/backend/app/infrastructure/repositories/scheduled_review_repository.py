@@ -122,6 +122,21 @@ class ScheduledReviewRepository:
         )
         return found is not None
 
+    async def open_run(self, definition_id: int) -> ScheduledReviewRun | None:
+        """The definition's queued or running record, locked for the stop request."""
+
+        record: ScheduledReviewRun | None = await self.session.scalar(
+            select(ScheduledReviewRun)
+            .where(
+                ScheduledReviewRun.scheduled_review_id == definition_id,
+                ScheduledReviewRun.state.in_(OPEN_STATES),
+            )
+            .order_by(ScheduledReviewRun.scheduled_review_run_id.desc())
+            .limit(1)
+            .with_for_update()
+        )
+        return record
+
     # --- run records ------------------------------------------------------------------------
 
     async def _finding_counts(self, review_run_ids: Sequence[int]) -> dict[int, int]:

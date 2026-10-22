@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth.dependencies import CurrentContext, require_super_admin
 from app.api.validation import envelope_validation_route
 from app.db.session import get_db
-from app.schemas.admin.users import ActiveChange, RoleChange, UserPage
+from app.schemas.admin.users import ActiveChange, UserPage
 from app.services.user_admin_service import (
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
@@ -55,19 +55,6 @@ async def list_users(
     """List the tenant's users ordered by login name (UPN)."""
 
     return await service.list_users(context, page=page, size=size, query=q)
-
-
-@router.put(
-    "/{public_id}/role",
-    response_model=RoleChange,
-    responses={404: {"description": "Kullanıcı yok"}, 409: {"description": "Süper yönetici"}},
-)
-async def set_role(
-    public_id: UUID, body: RoleChange, context: CurrentContext, service: Service
-) -> RoleChange:
-    """Assign 'inceleyici' or 'kural-yoneticisi'; repeating the same value changes nothing."""
-
-    return RoleChange(role=await service.set_role(context, public_id, body.role))
 
 
 @router.put(

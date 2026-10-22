@@ -49,18 +49,10 @@
       "presentation": {"reveal": "always", "panel": "dedicated", "clear": true}
     },
     {
-      "label": "DWH: Yerel test hesabı aç (inceleyici)",
-      "detail": "İnceleyici rolünde yerel hesap açar ya da parolasını sıfırlar. Ad ve parola terminalde sorulur.",
+      "label": "DWH: Yerel test hesabı aç (kullanıcı)",
+      "detail": "Kullanıcı rolünde yerel hesap açar ya da parolasını sıfırlar. Ad ve parola terminalde sorulur.",
       "type": "shell",
       "command": "scripts/create-local-user.sh --role inceleyici",
-      "problemMatcher": [],
-      "presentation": {"reveal": "always", "focus": true, "panel": "dedicated", "clear": true}
-    },
-    {
-      "label": "DWH: Yerel test hesabı aç (kural yöneticisi)",
-      "detail": "Kural yöneticisi rolünde yerel hesap açar ya da parolasını sıfırlar. Ad ve parola terminalde sorulur.",
-      "type": "shell",
-      "command": "scripts/create-local-user.sh --role kural-yoneticisi",
       "problemMatcher": [],
       "presentation": {"reveal": "always", "focus": true, "panel": "dedicated", "clear": true}
     },

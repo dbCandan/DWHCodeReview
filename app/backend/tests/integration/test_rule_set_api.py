@@ -285,7 +285,7 @@ async def test_publish_creates_numbered_immutable_versions_and_repeats_idempoten
     refused = await auth.client.post(
         f"{auth.prefix}/rule-set/versions",
         json={"base_revision": revision},
-        headers=manager.headers,
+        headers=reviewer.headers,
     )
     created = await auth.client.post(
         f"{auth.prefix}/rule-set/versions",
@@ -298,9 +298,9 @@ async def test_publish_creates_numbered_immutable_versions_and_repeats_idempoten
         headers=admin.headers,
     )
 
-    # rule-proposals Decision 3: a rule manager sends the draft for approval instead.
+    # directory-login Decision 14: only the super admin publishes; a user proposes instead.
     assert refused.status_code == 403
-    assert refused.json()["detail"]["code"] == "publish_requires_approval"
+    assert refused.json()["detail"]["code"] == "forbidden"
 
     assert created.status_code == 201, created.text
     version = created.json()

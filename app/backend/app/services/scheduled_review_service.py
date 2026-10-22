@@ -10,7 +10,7 @@ log line; events carry public identifiers only.
 import logging
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import status
 from sqlalchemy.exc import IntegrityError
@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import ApplicationError
 from app.core.logging import log_event
 from app.core.request_context import RequestContext
+from app.domain.models.review import ReviewRun, ReviewRunStatus
 from app.domain.models.scheduled_review import (
     MAX_CONCURRENT_RUNS_MAX,
     MAX_CONCURRENT_RUNS_MIN,
@@ -42,6 +43,7 @@ from app.domain.scheduled_review import (
     normalize_schedule_name,
     validate_period,
 )
+from app.infrastructure.repositories.review_repository import ReviewRepository
 from app.infrastructure.repositories.scheduled_review_repository import (
     DefinitionRow,
     RunRecord,
@@ -61,10 +63,14 @@ from app.schemas.scheduled_reviews.contracts import (
     ScheduledRunItem,
     ScheduledRunPage,
     ScheduledRunQueued,
+    ScheduledRunStopped,
     SchedulePeriod,
 )
 from app.services.request_scope import acting_user, active_tenant
 from app.services.rule_set_service import RuleSetService
+
+if TYPE_CHECKING:
+    from app.services.review_run_service import ReviewRunRegistry
 
 logger = logging.getLogger("app.scheduled_review")
 
@@ -532,6 +538,51 @@ class ScheduledReviewService:
             user_public_id=actor.public_id,
         )
         return ScheduledRunQueued(id=record.public_id)
+
+    async def stop(
+        self, context: RequestContext, public_id: str, registry: "ReviewRunRegistry"
+    ) -> ScheduledRunStopped:
+        """Requirement 11: the owner or the super admin ends the queued or running run.
+
+        A queued run ends at once; a running review is cancelled like "Analizi durdur" and its
+        record follows as cancelled. No summary e-mail is sent for a stopped run.
+        """
+
+        _, actor, row = await self._visible(context, public_id, lock=True)
+        record = await self.schedules.open_run(row.definition.scheduled_review_id)
+        if record is None:
+            raise ApplicationError(
+                status.HTTP_409_CONFLICT,
+                "scheduled_review_not_running",
+                "Bu tanımın sırada bekleyen veya süren bir koşumu yok.",
+            )
+        outcome: Literal["cancelling", "cancelled"] = "cancelled"
+        run = (
+            None
+            if record.review_run_id is None
+            else await self.session.get(ReviewRun, record.review_run_id)
+        )
+        if run is not None and registry.cancel(run.public_id):
+            outcome = "cancelling"
+        else:
+            if run is not None:
+                await ReviewRepository(self.session).finish_run(
+                    run.review_run_id,
+                    status=ReviewRunStatus.CANCELLED,
+                    finished_at=self._clock(),
+                )
+            record.state = ScheduledRunState.CANCELLED.value
+            record.finished_at = self._clock()
+            record.updated_by = actor.user_id
+        log_event(
+            logger,
+            "scheduled_review.stopped",
+            schedule_public_id=row.definition.public_id,
+            record_public_id=record.public_id,
+            outcome=outcome,
+            user_public_id=actor.public_id,
+        )
+        return ScheduledRunStopped(id=record.public_id, state=outcome)
 
     # --- setting (Decision 8) ---------------------------------------------------------------
 

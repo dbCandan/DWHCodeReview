@@ -20,7 +20,7 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Final, cast
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -125,6 +125,7 @@ EVENT_QUEUE_MAX_EVENTS = 256
 LIVE_RESULTS_MAX_OBJECTS = 50
 
 EventSink = Callable[[ReviewEvent], Awaitable[None]]
+_ENDED: Final = object()
 
 
 def _thousands(value: int) -> str:
@@ -146,11 +147,24 @@ class ReviewRunRegistry:
 
     def __init__(self) -> None:
         self._tasks: set[asyncio.Task[None]] = set()
+        self._by_run: dict[str, asyncio.Task[None]] = {}
         self.shutting_down = False
 
-    def track(self, task: asyncio.Task[None]) -> None:
+    def track(self, task: asyncio.Task[None], run_public_id: str | None = None) -> None:
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+        if run_public_id is not None:
+            self._by_run[run_public_id] = task
+            task.add_done_callback(lambda _: self._by_run.pop(run_public_id, None))
+
+    def cancel(self, run_public_id: str) -> bool:
+        """Requirement 15 by request: stop the run's task in this process; False if none runs."""
+
+        task = self._by_run.get(run_public_id)
+        if task is None or task.done():
+            return False
+        task.cancel()
+        return True
 
     async def shutdown(self, timeout: float = 5.0) -> None:
         self.shutting_down = True
@@ -321,7 +335,9 @@ class ReviewExecution:
         self._plan = plan
         self._runtime = runtime
         self._catalog = catalog
-        self._queue: asyncio.Queue[ReviewEvent] = asyncio.Queue(EVENT_QUEUE_MAX_EVENTS)
+        # The queue also carries _ENDED once the task is over, so a reader of a run stopped by
+        # request (which ends without a final event) returns at once.
+        self._queue: asyncio.Queue[ReviewEvent | object] = asyncio.Queue(EVENT_QUEUE_MAX_EVENTS)
         self.task: asyncio.Task[None] | None = None
 
     @property
@@ -336,7 +352,8 @@ class ReviewExecution:
 
         if self.task is None:
             self.task = asyncio.create_task(self._run(self._queue.put))
-            self._runtime.registry.track(self.task)
+            self.task.add_done_callback(self._mark_ended)
+            self._runtime.registry.track(self.task, self._plan.run_public_id)
 
     def cancel(self) -> None:
         """Requirement 15: stop starting calls, close running ones, store the run cancelled."""
@@ -354,16 +371,28 @@ class ReviewExecution:
         try:
             while True:
                 try:
-                    event = await asyncio.wait_for(self._queue.get(), idle_seconds)
+                    item = await asyncio.wait_for(self._queue.get(), idle_seconds)
                 except TimeoutError:
+                    if self.task is not None and self.task.done() and self._queue.empty():
+                        return
                     yield None
                     continue
+                if item is _ENDED:
+                    return
+                event = cast(ReviewEvent, item)
                 yield event
                 if isinstance(event, (CompleteEvent, ErrorEvent)):
                     return
         finally:
             # Nothing here awaits: this may run inside an already cancelled scope.
             self.cancel()
+
+    def _mark_ended(self, _: asyncio.Task[None]) -> None:
+        try:
+            self._queue.put_nowait(_ENDED)
+        except asyncio.QueueFull:
+            # The reader drains the queue first and then sees the task done on its next wait.
+            pass
 
     async def _run(self, emit: EventSink) -> None:
         plan = self._plan

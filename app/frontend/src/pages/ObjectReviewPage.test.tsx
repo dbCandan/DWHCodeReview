@@ -23,7 +23,7 @@ function page(items: CatalogObject[]): CatalogObjectPage {
 }
 
 async function chooseDatabase(name: string) {
-  const select = await screen.findByLabelText('Nesne listesi için veritabanı');
+  const select = await screen.findByLabelText('Veritabanı');
   await waitFor(() => expect(select).toBeEnabled());
   fireEvent.change(select, {target: {value: name}});
 }
@@ -58,7 +58,7 @@ describe('object review page', () => {
     const items = Array.from({length: 25}, (_, index) => `DB_${String(index + 1).padStart(2, '0')}`);
     vi.mocked(CatalogService.databases).mockResolvedValue({items, page: 1, page_size: 500, total: 25});
     renderWithSession(<ObjectReviewPage />);
-    const select = await screen.findByLabelText('Nesne listesi için veritabanı');
+    const select = await screen.findByLabelText('Veritabanı');
     await waitFor(() => expect(select).toBeEnabled());
     const offered = within(select)
       .getAllByRole('option')
@@ -95,7 +95,7 @@ describe('object review page', () => {
     await screen.findByText('dwh_01');
     fireEvent.change(screen.getByLabelText('Ara'), {target: {value: 'load'}});
     fireEvent.change(screen.getByLabelText('Tür'), {target: {value: 'V'}});
-    fireEvent.change(screen.getByLabelText('Bu tarihten sonra oluşturulan veya değişen'), {
+    fireEvent.change(screen.getByLabelText('Değişiklik tarihi (sonrası)'), {
       target: {value: '2026-02-01'},
     });
     await waitFor(() =>

@@ -24,20 +24,17 @@ import {
   type RuleDraft,
   type Tier,
 } from '@/lib/rules';
-import {useAuth} from '@/contexts/AuthContext';
-import {REQUEST_STATUS} from '@/lib/ruleProposals';
-import {RuleProposalService} from '@/services/ruleProposals';
 import {RuleSetService} from '@/services/ruleSet';
 import type {RuleSetWorkspace} from '@/types/sqlReview';
 
 type Notice = {tone: 'success' | 'error' | 'info'; text: string; conflict?: boolean};
 
 /**
- * Rule manager's draft editor (sql-review rule-management Requirement 1–6, 10, 12): two priority
+ * The super admin's draft editor (sql-review rule-management Requirement 1–6, 10, 12): two priority
  * groups, search, move within a group, delete, add with the next free identifier, each rule's
  * one-sentence summary, and save with the revision the page last saw. Named rule groups and the
  * rules' memberships are edited here too (rule-group-selection Requirement 1, 8). The super admin
- * publishes directly; a rule manager sends the draft for approval (rule-proposals Requirement 6).
+ * publishes directly; users propose changes instead (directory-login Decision 14).
  */
 export default function RulesPage() {
   const workspace = useResource('rule-set', (signal) => RuleSetService.workspace(signal));
@@ -92,9 +89,6 @@ function RulesEditor({
   const [nextNumber, setNextNumber] = useState(() => ruleNumber(workspace.next_rule_id) ?? 1);
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState<'save' | 'publish' | null>(null);
-  const {user} = useAuth();
-  const superAdmin = Boolean(user?.is_super_admin);
-  const [sent, setSent] = useState(0);
   const dirty = !draftsEqual(draft, saved);
   const rules = [...draft.critical, ...draft.normal];
   const tooLong = rules.some((rule) => rule.text.length > RULE_TEXT_LIMIT);
@@ -166,29 +160,6 @@ function RulesEditor({
     }
   }
 
-  /** rule-proposals Requirement 6: save unsaved changes, then send the saved revision. */
-  async function requestApproval() {
-    setBusy('publish');
-    onNotice(null);
-    let base = workspace;
-    try {
-      if (dirty)
-        base = await RuleSetService.saveDraft(workspace.revision, draft.critical, draft.normal, draft.groups);
-      await RuleProposalService.requestPublish(base.revision);
-      onNotice({
-        tone: 'success',
-        text: 'Taslak onaya gönderildi. Süper yönetici onaylayınca yeni sürüm yayımlanır.',
-      });
-      setSent((value) => value + 1);
-      if (base !== workspace) onSaved(base);
-    } catch (error) {
-      failure(error);
-      if (base !== workspace) onSaved(base);
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function publish() {
     setBusy('publish');
     onNotice(null);
@@ -220,16 +191,11 @@ function RulesEditor({
     <>
       <PageHeader
         title="Kurallar"
-        description={
-          superAdmin
-            ? 'Taslakta yaptığınız değişiklik yalnız “Yayınla” ile incelemelere uygulanır.'
-            : 'Taslakta yaptığınız değişiklik “Onaya gönder” ile süper yöneticiye gider; onaylanınca incelemelere uygulanır.'
-        }
+        description={'Taslakta yaptığınız değişiklik yalnız “Yayınla” ile incelemelere uygulanır.'}
         actions={
           <div className="stack-tight">
             <span className="subtle">{latestVersionLine(workspace.latest_version)}</span>
             {workspace.draft_differs && <Badge tone="warning">Taslakta yayımlanmamış değişiklik var</Badge>}
-            {!superAdmin && <LatestPublishRequest key={sent} />}
           </div>
         }
       />
@@ -291,40 +257,13 @@ function RulesEditor({
         <Button variant="secondary" onClick={() => void save()} disabled={busy !== null || !dirty || blocked} busy={busy === 'save'}>
           {busy === 'save' ? 'Kaydediliyor…' : 'Taslağı kaydet'}
         </Button>
-        {superAdmin ? (
-          <Button variant="primary" onClick={() => void publish()} disabled={busy !== null || blocked} busy={busy === 'publish'}>
-            {busy === 'publish' ? 'Yayınlanıyor…' : 'Yayınla'}
-          </Button>
-        ) : (
-          <Button
-            variant="primary"
-            onClick={() => void requestApproval()}
-            disabled={busy !== null || blocked}
-            busy={busy === 'publish'}
-          >
-            {busy === 'publish' ? 'Gönderiliyor…' : 'Onaya gönder'}
-          </Button>
-        )}
+        <Button variant="primary" onClick={() => void publish()} disabled={busy !== null || blocked} busy={busy === 'publish'}>
+          {busy === 'publish' ? 'Yayınlanıyor…' : 'Yayınla'}
+        </Button>
         {dirty && <Badge tone="warning">Kaydedilmedi</Badge>}
         {tooLong && <span className="field-error">Kural metni en çok 8.000 karakter olabilir.</span>}
         {badSummary && <span className="field-error">Bir kuralın özeti geçersiz; özet tek satırda en çok 200 karakter olabilir.</span>}
       </div>
     </>
-  );
-}
-
-/** The rule manager's latest publish request and, when rejected, its reason (Requirement 6). */
-function LatestPublishRequest() {
-  const latest = useResource('publish-requests:mine', (signal) =>
-    RuleProposalService.publishRequests(null, 1, 1, signal),
-  );
-  const request = latest.data?.items[0];
-  if (!request) return null;
-  return (
-    <span className="subtle">
-      Son yayın isteği: {REQUEST_STATUS[request.status]}
-      {request.published_version_number !== null && ` · sürüm ${request.published_version_number}`}
-      {request.rejection_reason && ` · gerekçe: ${request.rejection_reason}`}
-    </span>
   );
 }

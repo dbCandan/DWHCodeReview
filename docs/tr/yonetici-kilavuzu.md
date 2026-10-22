@@ -1,10 +1,10 @@
 # Yönetici kılavuzu
 
-Bu kılavuz üç kişi içindir:
+Bu kılavuz iki kişi içindir:
 
-- **Süper yönetici (uygulama yöneticisi):** Kullanıcılara rol verir, hesapları kapatır; test
-  ortamında SQL Server bağlantısını girer.
-- **Kural yöneticisi:** İnceleme kurallarını düzenler ve yayımlar, yapay zekâ çağrılarını izler.
+- **Süper yönetici (uygulama yöneticisi):** İnceleme kurallarını ve gruplarını düzenler ve yayımlar,
+  yapay zekâ çağrılarını izler, hesapları kapatır; test ortamında SQL Server
+  bağlantısını girer. Uygulamada başka yetkili rol yoktur; diğer herkes **Kullanıcı**dır.
 - **Dağıtımı yöneten ekip:** Test ortamına (nonprod: ekibin ortak kullandığı, kurum sunucularında
   çalışan sürüm) kurulumu yapan Azure DevOps işini (kodu sunucuya kuran kurum aracı) ve gizli
   değerleri yönetir. Bu ekip uygulama içinde bir rol değildir.
@@ -51,14 +51,12 @@ belge).
 
 Süper yönetici menüde **Yönetim → Kullanıcılar** sayfasını görür.
 
-- Kurum hesabıyla ilk kez giren herkes kendiliğinden **İnceleyici** olur. Bir kişiyi **Kural
-  yöneticisi** yapmak için önce onun bir kez giriş yapmasını bekleyin; kaydı ancak o zaman listede
-  görünür.
+- Kurum hesabıyla ilk kez giren herkes kendiliğinden **Kullanıcı** olur; kaydı ilk girişten sonra
+  listede görünür. Seçilecek başka rol yoktur.
 - **Kullanıcı ara** alanına `ad.soyad` yazıp arayın. Tabloda kullanıcı adı, görünen ad, hesap türü
   (**Kurum dizini** ya da **Yerel**), rol, durum ve son giriş zamanı vardır.
-- **Rol** kutusundan İnceleyici ile Kural yöneticisi arasında seçim yapın. Değişiklik hemen kaydedilir.
 - **Pasifleştir** hesabı kapatır; kişi doğru parolayla da giremez. **Etkinleştir** yeniden açar.
-- Rolü veya durumu değişen kişinin açık oturumları kapatılır; en geç 15 dakika içinde yeniden giriş
+- Durumu değişen kişinin açık oturumları kapatılır; en geç 15 dakika içinde yeniden giriş
   ister.
 - Her rol ve durum değişikliği (kim, kimi, eski ve yeni değer, zaman) veritabanındaki kalıcı bir
   değişiklik kaydına yazılır.
@@ -69,12 +67,14 @@ Süper yönetici menüde **Yönetim → Kullanıcılar** sayfasını görür.
 - "Bu hesap başka bir kullanıcı kaydıyla çakışıyor" iletisi, aynı e-postayla yerel bir hesap
   bulunduğunu gösterir. Bu çakışmayı dağıtımı yöneten ekip veritabanında elle çözer.
 
-Bugün kurum dizininde hesabı olan herkes girebilir ve İnceleyici olur. Girişi belirli bir kurum
+Bugün kurum dizininde hesabı olan herkes girebilir ve Kullanıcı olur. Girişi belirli bir kurum
 grubuyla sınırlamak açık bir iştir (dizin girişi PRD'sindeki Task 14).
 
 ## Kuralları düzenlemek ve yayımlamak
 
-Kural yöneticisi (ve süper yönetici) menüde **Yönetim → Kurallar** sayfasını görür.
+Süper yönetici menüde **Yönetim → Kurallar** sekmesini görür. Kural ve grup değişikliklerini yalnız
+süper yönetici yapar; kullanıcıların öneri gönderdiği bir onay akışı yoktur. **Yönetim → Genel durum**
+kuralların son sürümünü, SQL Server, LLM ve e-posta durumunu tek bakışta gösterir.
 
 - Kuralların bir **taslağı** ve numaralı **yayımlanmış sürümleri** vardır. İncelemeler yalnız en son
   yayımlanmış sürümü kullanır; taslaktaki değişiklik **Yayınla**'ya basılana kadar hiçbir incelemeyi
@@ -102,7 +102,7 @@ Kural yöneticisi (ve süper yönetici) menüde **Yönetim → Kurallar** sayfas
 - Eski bir sürümü taslağa geri yükleme özelliği yoktur. Eski sürümleri **Yayımlanmış kurallar**
   sayfasında okuyabilirsiniz.
 
-Kural metni modele olduğu gibi gider. Metne modeli yönlendiren ifadeler yazmak kural yöneticisinin
+Kural metni modele olduğu gibi gider. Metne modeli yönlendiren ifadeler yazmak süper yöneticinin
 sorumluluğundadır.
 
 Kaynak: [kural yönetimi PRD'si](../../specs/sql-review/PRDs/001-rule-management/PRD.md).
@@ -125,7 +125,7 @@ Kaynak: [LLM bağlantısı PRD'si](../../specs/sql-review/PRDs/006-llm-connectio
 
 ### Yerelde: ekrandan
 
-Yerelde kural yöneticisi menüde **SQL bağlantısı** ve **LLM bağlantısı** sayfalarını görür.
+Yerelde süper yönetici menüde **SQL bağlantısı** ve **LLM bağlantısı** sayfalarını görür.
 
 - **SQL bağlantısı:** Sunucu adı, port (bağlantı kapı numarası), kullanıcı adı, parola, **Şifreli bağlantı (Encrypt)** ve
   **Sunucu sertifikasına doğrulamadan güven (TrustServerCertificate)** alanları vardır. **Bağlantıyı
@@ -184,8 +184,7 @@ Bilmeniz gerekenler:
   ulaşabilir. Aralık `helm/dwhcodereview/values-project.yaml` dosyasındadır; sunucu bu aralığın
   dışındaysa ya da başka bir port kullanıyorsa test "SQL Server'a ulaşılamadı." der ve aralığın
   kurulumla değiştirilmesi gerekir.
-- Kural yöneticisi ve inceleyici bu sayfayı test ortamında görmez; adresle açan kural yöneticisi "Bu
-  ortamda SQL bağlantısını yalnız uygulama yöneticisi düzenleyebilir." yazısını görür.
+- Kullanıcılar bu sayfayı görmez; adresle açan kullanıcı erişim yetkisi olmadığını görür.
 - Kimin ne zaman kaydettiği veritabanında tutulur; günlüğe (log: uygulamanın yaptığı işleri satır
   satır yazdığı kayıt) yalnız hangi alanların değiştiği yazılır, değerler yazılmaz.
 

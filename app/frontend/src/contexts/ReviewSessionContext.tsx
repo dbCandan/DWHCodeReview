@@ -40,6 +40,10 @@ export interface ReviewSessionState {
   view: ReviewView;
   /** The results window was opened from the finished live window, which it can return to. */
   resultsFromLive: boolean;
+  /** "Analizi durdur" was pressed and the stop request is on its way. */
+  stopping: boolean;
+  /** The server confirmed the stop: its LLM calls for this run were cut off. */
+  stopConfirmed: boolean;
 }
 
 type Action =
@@ -48,6 +52,8 @@ type Action =
   | {type: 'complete'; runId: string; results: LiveObjectResult[]; resultsOmitted: boolean}
   | {type: 'fail'; message: string}
   | {type: 'cancelled'}
+  | {type: 'stopping'}
+  | {type: 'stopConfirmed'}
   | {type: 'show'; view: ReviewView; fromLive?: boolean}
   | {type: 'clear'}
   | {type: 'mark'; target: FalsePositiveTarget; value: boolean};
@@ -64,6 +70,8 @@ const initialState: ReviewSessionState = {
   errorMessage: null,
   view: 'none',
   resultsFromLive: false,
+  stopping: false,
+  stopConfirmed: false,
 };
 
 function reducer(state: ReviewSessionState, action: Action): ReviewSessionState {
@@ -96,9 +104,14 @@ function reducer(state: ReviewSessionState, action: Action): ReviewSessionState 
       return {...state, phase: 'failed', results: [], errorMessage: action.message};
     case 'cancelled':
       // Partial results are neither stored nor shown (object-review Requirement 15).
-      return {...state, phase: 'cancelled', results: [], errorMessage: STOPPED_MESSAGE};
+      return {...state, phase: 'cancelled', results: [], errorMessage: STOPPED_MESSAGE, stopping: false};
+    case 'stopping':
+      return state.phase === 'running' ? {...state, stopping: true} : state;
+    case 'stopConfirmed':
+      return {...state, stopConfirmed: true};
     case 'show':
-      if (state.phase === 'running' && action.view !== 'live') return state;
+      // A running review may be sent to the background (the dock) but has no results yet.
+      if (state.phase === 'running' && action.view === 'results') return state;
       if (action.view === 'results' && state.results.length === 0) return state;
       return {...state, view: action.view, resultsFromLive: action.view === 'results' && Boolean(action.fromLive)};
     case 'clear':
@@ -115,7 +128,10 @@ interface ReviewSessionValue {
   /** `ruleCodes` empty runs every rule (rule-group-selection Requirement 4, Decision 6). */
   startObjectReview: (selections: ObjectSelection[], ruleCodes?: string[]) => void;
   startScriptReview: (sql: string, label: string, ruleCodes?: string[]) => void;
-  /** "Analizi durdur": closes the stream, which stops the run on the server. */
+  /**
+   * "Analizi durdur": asks the server to stop the run, then closes the stream. The request does not
+   * rely on a proxy passing the closed connection on (object-review Decision 9).
+   */
   stop: () => void;
   showLive: () => void;
   showResults: (fromLive?: boolean) => void;
@@ -144,6 +160,7 @@ export function ReviewSessionProvider({children}: {children: ReactNode}) {
   const [session, dispatch] = useReducer(reducer, initialState);
   const controllerRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
+  const runIdRef = useRef<string | null>(null);
 
   // Leaving the signed-in area (sign-out) closes the stream, which stops the run on the server.
   useEffect(
@@ -160,6 +177,7 @@ export function ReviewSessionProvider({children}: {children: ReactNode}) {
       const generation = ++generationRef.current;
       const controller = new AbortController();
       controllerRef.current = controller;
+      runIdRef.current = null;
       dispatch({type: 'start', kind, title, subtitle, objectsTotal});
       let finished = false;
       try {
@@ -177,6 +195,7 @@ export function ReviewSessionProvider({children}: {children: ReactNode}) {
             finished = true;
             dispatch({type: 'fail', message: messageForCode(event.code) ?? FAILED_MESSAGE});
           } else {
+            if (event.phase === 'run_started') runIdRef.current = event.run_id;
             dispatch({type: 'event', event});
           }
         });
@@ -213,7 +232,23 @@ export function ReviewSessionProvider({children}: {children: ReactNode}) {
     [run],
   );
 
-  const stop = useCallback(() => controllerRef.current?.abort(), []);
+  const stop = useCallback(() => {
+    const controller = controllerRef.current;
+    if (controller === null) return;
+    const runId = runIdRef.current;
+    if (runId === null) {
+      controller.abort();
+      return;
+    }
+    dispatch({type: 'stopping'});
+    ReviewService.cancelRun(runId)
+      .then(
+        () => dispatch({type: 'stopConfirmed'}),
+        // A run that has just ended answers 409; closing the stream still stops it.
+        () => undefined,
+      )
+      .finally(() => controller.abort());
+  }, []);
   const showLive = useCallback(() => dispatch({type: 'show', view: 'live'}), []);
   const showResults = useCallback((fromLive = false) => dispatch({type: 'show', view: 'results', fromLive}), []);
   const closeWindows = useCallback(() => dispatch({type: 'show', view: 'none'}), []);

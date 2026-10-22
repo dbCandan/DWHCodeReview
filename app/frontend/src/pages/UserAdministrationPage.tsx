@@ -8,17 +8,17 @@ import {PageHeader} from '@/components/ui/PageHeader';
 import {EmptyState, ErrorState, LoadingState} from '@/components/ui/States';
 import {useAuth} from '@/contexts/AuthContext';
 import {useResource} from '@/hooks/useResource';
-import {ROLE_REVIEWER, ROLE_RULE_MANAGER, roleLabel} from '@/lib/access';
+import {roleLabel} from '@/lib/access';
 import {describeError} from '@/lib/errorMessages';
 import {formatDateTime} from '@/lib/format';
 import {UserAdminService} from '@/services/userAdmin';
-import type {ApplicationRole, UserPage, UserSummary} from '@/types/sqlReview';
+import type {UserPage, UserSummary} from '@/types/sqlReview';
 
 const PAGE_SIZE = 50;
 
 /**
  * Super-admin user administration (application-foundation directory-login Requirement 5, 13):
- * list, change the role between reviewer and rule manager, deactivate or reactivate.
+ * list, deactivate or reactivate. Everyone but the super admin is a user (directory-login Decision 14).
  */
 export default function UserAdministrationPage() {
   const {user: current} = useAuth();
@@ -39,20 +39,6 @@ export default function UserAdministrationPage() {
 
   function updateRow(data: UserPage, updated: UserSummary) {
     users.replace({...data, items: data.items.map((item) => (item.public_id === updated.public_id ? updated : item))});
-  }
-
-  async function changeRole(data: UserPage, target: UserSummary, role: ApplicationRole) {
-    setBusyId(target.public_id);
-    setNotice(null);
-    try {
-      const result = await UserAdminService.setRole(target, role);
-      updateRow(data, {...target, role: result.role});
-      setNotice({tone: 'success', text: `${target.username} için rol “${roleLabel(result.role)}” oldu.`});
-    } catch (error) {
-      setNotice({tone: 'error', text: describeError(error)});
-    } finally {
-      setBusyId(null);
-    }
   }
 
   async function changeActive(data: UserPage, target: UserSummary, active: boolean) {
@@ -136,19 +122,7 @@ export default function UserAdministrationPage() {
                         {item.is_super_admin ? (
                           <Badge tone="primary">Süper yönetici</Badge>
                         ) : (
-                          <select
-                            className="select"
-                            aria-label={`${item.username} rolü`}
-                            value={item.role ?? ''}
-                            disabled={busy}
-                            onChange={(event) =>
-                              void changeRole(data, item, event.target.value as ApplicationRole)
-                            }
-                          >
-                            {item.role === null && <option value="">Rol yok</option>}
-                            <option value={ROLE_REVIEWER}>{roleLabel(ROLE_REVIEWER)}</option>
-                            <option value={ROLE_RULE_MANAGER}>{roleLabel(ROLE_RULE_MANAGER)}</option>
-                          </select>
+                          <Badge tone="neutral">{roleLabel(item.role)}</Badge>
                         )}
                       </td>
                       <td>

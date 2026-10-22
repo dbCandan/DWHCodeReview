@@ -1,4 +1,5 @@
-import {withBrowser, baseUrl, accounts, message, signIn, apiStatus} from '../shared/harness.mjs';
+import {withBrowser, baseUrl, accounts, signIn, apiStatus} from '../shared/harness.mjs';
+import {openReview} from './navigation.mjs';
 
 /**
  * scheduled-review-email Acceptance 4 and review-history-export Acceptance 6 (local L2). The
@@ -71,9 +72,8 @@ await withBrowser('scheduled review: define, run in the background, open the rep
     scheduleId = created.body.id;
 
     // The page lists the definition with its period; pause and resume change its state.
-    await owner.getByRole('navigation', {name: message('shell.navigation')}).getByRole('link', {name: 'Zamanlanmış incelemeler'}).click();
-    await owner.getByRole('heading', {name: 'Zamanlanmış incelemeler', level: 1}).waitFor();
-    const row = owner.getByRole('row').filter({hasText: NAME});
+    await openReview(owner, 'Zamanlanmış', 'Zamanlanmış incelemeler');
+    const row = owner.getByRole('article', {name: NAME});
     await row.getByText('Her gün 03:00 (Europe/Istanbul)').waitFor();
     await owner.getByRole('button', {name: `${NAME} tanımını duraklat`}).click();
     await owner.getByText('Tanım duraklatıldı.').waitFor();
@@ -129,4 +129,8 @@ await withBrowser('scheduled review: define, run in the background, open the rep
       assert.ok([204, 404].includes(removed.status), `delete answered ${removed.status}`);
     }
   }
+}, {
+  // "İnceleme" opens the object review first; the unconfigured SQL Server answers its database
+  // list with 503 by contract before the switch moves to the scheduled reviews.
+  expectedServerErrors: [/^503 GET .*\/api\/dwhcodereview\/v1\/databases\?/],
 });

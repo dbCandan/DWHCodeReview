@@ -1,4 +1,4 @@
-import {fireEvent, screen, waitFor} from '@testing-library/react';
+import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {describe, expect, it, vi} from 'vitest';
 import PublishedRulesPage from './PublishedRulesPage';
 import {RuleSetService} from '@/services/ruleSet';
@@ -36,7 +36,7 @@ function mockVersions() {
 }
 
 describe('published rules page', () => {
-  it.each<TestRole>(['inceleyici', 'kural-yoneticisi'])('is read-only for %s', async (role) => {
+  it.each<TestRole>(['inceleyici'])('is read-only for %s', async (role) => {
     mockVersions();
     vi.spyOn(RuleSetService, 'latest').mockResolvedValue(version(2, 'İkinci metin'));
     renderWithSession(<PublishedRulesPage />, {role});
@@ -71,12 +71,18 @@ describe('published rules page', () => {
 });
 
 describe('published rules page — named rule groups (rule-group-selection Requirement 3)', () => {
-  it('shows the frozen groups and each rule\'s group read-only', async () => {
+  it('lists the frozen groups on the left and shows a chosen group\'s rules', async () => {
     mockVersions();
     vi.spyOn(RuleSetService, 'latest').mockResolvedValue(version(2, 'İkinci metin'));
     renderWithSession(<PublishedRulesPage />, {role: 'inceleyici'});
-    expect(await screen.findByText('Güvenlik: Erişim kuralları')).toBeInTheDocument();
-    expect(screen.getAllByText('Güvenlik').length).toBeGreaterThan(0);
+    const shelves = await screen.findByRole('navigation', {name: 'Kural grupları'});
+    expect(within(shelves).getByRole('button', {name: /Tüm kurallar/})).toHaveAttribute('aria-pressed', 'true');
+    const group = within(shelves).getByRole('button', {name: /Güvenlik/});
+    expect(within(group).getByText('Erişim kuralları')).toBeInTheDocument();
+    fireEvent.click(group);
+    expect(group).toHaveAttribute('aria-pressed', 'true');
+    const rules = screen.getByRole('region', {name: 'Güvenlik'});
+    expect(within(rules).getByRole('heading', {name: 'Güvenlik'})).toBeInTheDocument();
     expect(screen.queryByRole('button', {name: /grubunu sil/})).toBeNull();
   });
 });
@@ -90,7 +96,7 @@ describe('published rules page — simple view (rule-management Requirement 12)'
     return detail;
   }
 
-  it.each<TestRole>(['inceleyici', 'kural-yoneticisi'])('shows %s one sentence per rule', async (role) => {
+  it.each<TestRole>(['inceleyici'])('shows %s one sentence per rule', async (role) => {
     mockVersions();
     vi.spyOn(RuleSetService, 'latest').mockResolvedValue(summarized());
     renderWithSession(<PublishedRulesPage />, {role});
@@ -100,12 +106,14 @@ describe('published rules page — simple view (rule-management Requirement 12)'
     expect(screen.queryByText(/amaç açıklanmalıdır/)).toBeNull();
   });
 
-  it('shows the super admin the summary and the detailed text', async () => {
+  it('shows the super admin the summary and the detailed text behind a disclosure', async () => {
     mockVersions();
     vi.spyOn(RuleSetService, 'latest').mockResolvedValue(summarized());
     renderWithSession(<PublishedRulesPage />, {role: 'super_admin'});
-    expect(await screen.findByText('Yorum satırı bulunmalıdır ve amaç açıklanmalıdır.')).toBeInTheDocument();
-    expect(screen.getByText('Özet: Yorum yazılır.')).toBeInTheDocument();
+    expect(await screen.findByText('Yorum yazılır.')).toBeInTheDocument();
+    const detail = screen.getByText('Yorum satırı bulunmalıdır ve amaç açıklanmalıdır.');
+    expect(detail.closest('details')).not.toBeNull();
     expect(screen.getByText('NOLOCK kullanılmamalıdır. Kirli okuma yanlış sonuç üretir.')).toBeInTheDocument();
+    expect(screen.getAllByText('Ayrıntılı metni göster')).toHaveLength(2);
   });
 });

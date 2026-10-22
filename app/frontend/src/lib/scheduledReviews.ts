@@ -175,3 +175,19 @@ export function stateText(run: Pick<ScheduledRunItem, 'state' | 'skip_reason'>):
   const label = STATE_LABELS[run.state];
   return run.skip_reason ? `${label} (${SKIP_REASON_LABELS[run.skip_reason]})` : label;
 }
+
+/** What a failed summary or test e-mail means for the operations team (Requirement 10). */
+export const SMTP_FAILURE_TEXT: Record<string, string> = {
+  smtp_unreachable:
+    'SMTP sunucusuna bağlanılamadı. Sunucu adresini ve portunu, ağ çıkış iznini (egress) kontrol edin.',
+  smtp_tls_failed:
+    'TLS kurulamadı: sunucu STARTTLS sunmuyor ya da sertifikası kurum CA ile doğrulanamadı.',
+  smtp_auth_failed: 'SMTP kullanıcı adı veya parolası reddedildi.',
+  smtp_rejected: 'SMTP sunucusu göndereni veya alıcıyı reddetti.',
+  smtp_address_not_allowed: 'SMTP sunucu adresi kurum içi (özel) bir adrese çözülmüyor.',
+  smtp_failed: 'SMTP sunucusu beklenmeyen bir hata döndürdü.',
+};
+
+export function smtpFailureText(code: string | null | undefined): string {
+  return (code && SMTP_FAILURE_TEXT[code]) || 'E-posta gönderilemedi.';
+}

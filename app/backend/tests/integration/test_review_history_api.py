@@ -203,7 +203,8 @@ async def test_the_detail_is_visible_to_the_owner_and_rule_manager_only(
     (result,) = body["results"]
     assert [r["rule_id"] for r in result["rule_results"]] == codes
     assert [f["line_reference"] for f in result["findings"]] == ["Satır 1", "Satır 2", "Satır 3"]
-    assert "source_sql" not in own.text and MARKER not in own.text
+    # Requirement 3, 13: without with_sql the SQL text never leaves the server.
+    assert result["source_sql"] is None and MARKER not in own.text
     assert (await _get(review_env, f"/{run['run_id']}", manager)).status_code == 200
     for session, run_id in ((colleague, run["run_id"]), (reviewer, str(uuid4()))):
         hidden = await _get(review_env, f"/{run_id}", session)
@@ -691,3 +692,18 @@ async def test_a_run_larger_than_the_driver_parameter_limit_is_read_and_exported
         ("csv", count * 31, None),
         ("sql", None, count),
     ]
+
+
+async def test_the_detail_carries_the_sql_only_on_request(review_env: ReviewEnv) -> None:
+    # Requirement 13, Decision 10: the code view asks for the text; the default answer has none.
+    await _setup(review_env)
+    reviewer = await review_env.sessions.reviewer()
+    run = await _script_run(review_env, reviewer, "kod görünümü")
+    plain = (await _get(review_env, f"/{run['run_id']}", reviewer)).json()
+    assert [item["source_sql"] for item in plain["results"]] == [None]
+    with_sql = (await _get(review_env, f"/{run['run_id']}?with_sql=true", reviewer)).json()
+    [item] = with_sql["results"]
+    assert item["source_sql"] is not None and "FROM dbo.Musteri" in item["source_sql"]
+    stranger = await review_env.sessions.reviewer()
+    hidden = await _get(review_env, f"/{run['run_id']}?with_sql=true", stranger)
+    assert hidden.status_code == 404

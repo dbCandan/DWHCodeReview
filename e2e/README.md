@@ -7,7 +7,7 @@ yönlendirme, oturum açma, belirtecin yalnız bellekte tutulması, kiracı uygu
 
 `sql-review` paketi ayrıca `scripts/create-local-user.sh --role ...` ile açılmış yerel hesapları
 ortam değişkenlerinden alır: `APP_E2E_REVIEWER_USER`/`_PASS`, `APP_E2E_SECOND_REVIEWER_USER`/`_PASS`
-(ikisi `inceleyici`) ve `APP_E2E_RULE_MANAGER_USER`/`_PASS` (`kural-yoneticisi`). Arka ucun ulaşabildiği
+(ikisi `inceleyici`); kural ve bağlantı yönetimi süper yönetici hesabıyla yapılır (directory-login Decision 14). Arka ucun ulaşabildiği
 OpenAI uyumlu bir LLM adresi `APP_E2E_LLM_BASE_URL` (isteğe bağlı `APP_E2E_LLM_MODEL`) ile verilirse
 tam SQL betiği incelemesi çalışır; verilmezse yalnız "LLM bağlantısı yapılandırılmamış" reddi doğrulanır. İstemciden bağımsız
 Node.js/Playwright kodudur; eklenti kurmaz veya ikinci MCP sunucusu açmaz. Tarayıcı çalıştırılabilir

@@ -96,7 +96,6 @@ describe('auth context session', () => {
 
   it.each([
     ['inceleyici', {review: true, manageRules: false, administerUsers: false}],
-    ['kural-yoneticisi', {review: true, manageRules: true, administerUsers: false}],
     ['super_admin', {review: true, manageRules: true, administerUsers: true}],
   ] as const)('derives menu access for %s', async (role, expected) => {
     writeSession('jwt', testUser(role));

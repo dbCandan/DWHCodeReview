@@ -4,7 +4,7 @@ import {LastReviewBanner} from '@/components/review/LastReviewBanner';
 import {ObjectTable} from '@/components/review/ObjectTable';
 import {Alert} from '@/components/ui/Alert';
 import {Button} from '@/components/ui/Button';
-import {Card} from '@/components/ui/Card';
+import {Icon} from '@/components/ui/Icon';
 import {PageHeader} from '@/components/ui/PageHeader';
 import {Pager} from '@/components/ui/Pager';
 import {EmptyState, ErrorState, LoadingState} from '@/components/ui/States';
@@ -113,186 +113,204 @@ export default function ObjectReviewPage() {
     setSelection({});
   }
 
+  const startLabel =
+    selected.length === 0 ? 'İnceleme için en az bir nesne seçin' : `Seçilen ${selected.length} nesneyi incele`;
+
   return (
-    <div className="page">
+    <div className="page page-fill">
       <PageHeader
         title="Nesne incelemesi"
-        description="Veritabanını seçip nesneleri işaretleyin. Başka bir veritabanına geçerek seçime eklemeye devam edebilirsiniz; bir incelemedeki nesne sayısı için sınır yoktur."
+        description="Veritabanı seçin, nesneleri işaretleyin; kuralları sağdaki panelden seçip incelemeyi başlatın."
       />
       <LastReviewBanner kind="object" />
-      <Card
-        title="Veritabanı"
-        actions={
-          <Button size="sm" variant="ghost" onClick={databases.reload} disabled={databases.status === 'loading'}>
-            Listeyi yenile
-          </Button>
-        }
-      >
-        <div className="stack">
-          <div className="field">
-            <label className="field-label" htmlFor="review-database">
-              Nesne listesi için veritabanı
-            </label>
-            <select
-              id="review-database"
-              className="select"
-              value={database}
-              disabled={databases.data === undefined || databases.data.items.length === 0}
-              onChange={(event) => filterChanged(() => setDatabase(event.target.value))}
-            >
-              <option value="">{databases.status === 'loading' ? 'Yükleniyor…' : '— Veritabanı seçin —'}</option>
-              {databases.data?.items.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
+      <div className="workspace">
+        <section className="pane" aria-label="Nesneler">
+          <div className="pane-head stack">
+            <div className="filter-bar">
+              <div className="field filter-db">
+                <label className="field-label" htmlFor="review-database">
+                  Veritabanı
+                </label>
+                <div className="row row-nowrap">
+                  <select
+                    id="review-database"
+                    className="select"
+                    value={database}
+                    disabled={databases.data === undefined || databases.data.items.length === 0}
+                    onChange={(event) => filterChanged(() => setDatabase(event.target.value))}
+                  >
+                    <option value="">{databases.status === 'loading' ? 'Yükleniyor…' : '— Veritabanı seçin —'}</option>
+                    {databases.data?.items.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="secondary"
+                    className="icon-btn"
+                    onClick={databases.reload}
+                    disabled={databases.status === 'loading'}
+                    aria-label="Listeyi yenile"
+                    title="Listeyi yenile"
+                  >
+                    <Icon name="refresh" />
+                  </Button>
+                </div>
+              </div>
+              <div className="field grow">
+                <label className="field-label" htmlFor="object-search">
+                  Ara
+                </label>
+                <input
+                  id="object-search"
+                  className="input"
+                  type="search"
+                  value={text}
+                  maxLength={200}
+                  placeholder="Şema, ad veya tür…"
+                  disabled={!database}
+                  onChange={(event) => filterChanged(() => setText(event.target.value))}
+                />
+              </div>
+              <div className="field">
+                <label className="field-label" htmlFor="object-type">
+                  Tür
+                </label>
+                <select
+                  id="object-type"
+                  className="select"
+                  value={type}
+                  disabled={!database}
+                  onChange={(event) => filterChanged(() => setType(event.target.value))}
+                >
+                  <option value="">Tüm türler</option>
+                  {OBJECT_TYPES.map((option) => (
+                    <option key={option.code} value={option.code}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label className="field-label" htmlFor="object-from-date">
+                  Değişiklik tarihi (sonrası)
+                </label>
+                <input
+                  id="object-from-date"
+                  className="input"
+                  type="date"
+                  value={fromDate}
+                  disabled={!database}
+                  onChange={(event) => filterChanged(() => setFromDate(event.target.value))}
+                />
+              </div>
+            </div>
+            {databases.status === 'error' && (
+              <ErrorState message={describeError(databases.error)} onRetry={databases.reload} />
+            )}
+            {databases.status === 'success' && databases.data.items.length === 0 && (
+              <p className="muted">Bağlantı hesabının erişebildiği çevrimiçi veritabanı yok.</p>
+            )}
+            {objects.data && matching > 0 && (
+              <div className="row">
+                {gathering ? (
+                  <>
+                    <p className="subtle tabular grow" role="status">
+                      Süzgece uyan nesneler seçiliyor… {gather.loaded.toLocaleString('tr-TR')} /{' '}
+                      {gather.total.toLocaleString('tr-TR')}
+                    </p>
+                    <Button size="sm" onClick={stopGathering}>
+                      Vazgeç
+                    </Button>
+                  </>
+                ) : (
+                  <Button size="sm" onClick={() => void selectAllMatching()} disabled={running}>
+                    Süzgece uyan {matching.toLocaleString('tr-TR')} nesnenin tümünü seç
+                  </Button>
+                )}
+                {gather.status === 'done' && (
+                  <p className="subtle" role="status">
+                    Süzgece uyan {gather.matched.toLocaleString('tr-TR')} nesne seçildi.
+                  </p>
+                )}
+              </div>
+            )}
+            {gather.status === 'error' && <Alert tone="error">{gather.message}</Alert>}
           </div>
-          {databases.status === 'error' && (
-            <ErrorState message={describeError(databases.error)} onRetry={databases.reload} />
+          <div className="pane-body">
+            {!database && databases.status !== 'error' && (
+              <EmptyState title="Nesne listesini görmek için bir veritabanı seçin." icon="database" />
+            )}
+            {objects.status === 'error' && <ErrorState message={describeError(objects.error)} onRetry={objects.reload} />}
+            {objects.status === 'loading' && objects.data === undefined && <LoadingState label="Nesneler yükleniyor…" />}
+            {objects.data && objects.data.items.length === 0 && <EmptyState title="Süzgeçlere uyan nesne yok." />}
+            {objects.data && objects.data.items.length > 0 && (
+              <div aria-busy={objects.status === 'loading'}>
+                <ObjectTable
+                  database={database}
+                  objects={objects.data.items}
+                  selection={selection}
+                  onToggle={(object, value) => setSelection((current) => toggleSelection(current, database, object, value))}
+                  onToggleAll={(items, value) => setSelection((current) => toggleAll(current, database, items, value))}
+                />
+              </div>
+            )}
+          </div>
+          {objects.data && (
+            <div className="pane-foot">
+              <Pager page={page} pageSize={PAGE_SIZE} total={objects.data.total} onPage={setPage} />
+            </div>
           )}
-          {databases.status === 'success' && databases.data.items.length === 0 && (
-            <p className="muted">Bağlantı hesabının erişebildiği çevrimiçi veritabanı yok.</p>
-          )}
-        </div>
-      </Card>
+        </section>
 
-      <RuleSelectionPicker value={ruleCodes} disabled={running} onChange={setRuleCodes} />
-
-      <Card
-        title="Nesne seçimi"
-        actions={
-          <>
-            <span className="subtle tabular" aria-live="polite">
-              {selected.length.toLocaleString('tr-TR')} seçili · {databaseCount(selection)} veritabanı
-            </span>
-            <Button size="sm" onClick={clearSelection} disabled={selected.length === 0 || running}>
-              Seçimi temizle
-            </Button>
+        <aside className="pane pane-side" aria-label="İnceleme ayarları">
+          <div className="pane-head">
+            <div className="selection-summary" aria-live="polite">
+              <span className="selection-count tabular" aria-hidden="true">
+                {selected.length.toLocaleString('tr-TR')}
+              </span>
+              <span className="stack-tight grow">
+                <strong>Seçilen nesneler</strong>
+                <span className="subtle tabular">
+                  {selected.length.toLocaleString('tr-TR')} seçili · {databaseCount(selection)} veritabanı
+                </span>
+              </span>
+              <Button size="sm" variant="ghost" onClick={clearSelection} disabled={selected.length === 0 || running}>
+                Seçimi temizle
+              </Button>
+            </div>
+          </div>
+          <div className="pane-body">
+            <RuleSelectionPicker plain value={ruleCodes} disabled={running} onChange={setRuleCodes} />
+          </div>
+          <div className="pane-foot stack">
+            {beyondTechnicalLimit && (
+              <Alert tone="warning">
+                Tek istekte teknik olarak en çok {SELECTION_TECHNICAL_LIMIT.toLocaleString('tr-TR')} nesne
+                gönderilebilir. Bu bir ürün sınırı değil, isteğin boyut sınırıdır; seçimi azaltıp kalan nesneleri
+                ayrı bir incelemede çalıştırın.
+              </Alert>
+            )}
+            {!beyondTechnicalLimit && selected.length > LARGE_RUN_NOTICE && (
+              <Alert tone="info">
+                Büyük seçim: inceleme her nesne için her kuralı yapay zekâ modeline ayrı sorar ve saatler sürebilir.
+                Bitene kadar bu sekmeyi açık tutun; bağlantı koparsa ya da uygulama yeniden başlatılırsa sonuç
+                saklanmaz.
+              </Alert>
+            )}
             <Button
               variant="primary"
+              className="btn-block btn-lg"
               onClick={() => startObjectReview(selected, ruleCodes)}
               disabled={selected.length === 0 || running || gathering || beyondTechnicalLimit}
-              aria-label={
-                selected.length === 0 ? 'İnceleme için en az bir nesne seçin' : `Seçilen ${selected.length} nesneyi incele`
-              }
+              aria-label={startLabel}
             >
               {running ? 'İnceleniyor…' : `Seçilenleri incele${selected.length ? ` (${selected.length})` : ''}`}
             </Button>
-          </>
-        }
-        footer={
-          objects.data ? (
-            <Pager page={page} pageSize={PAGE_SIZE} total={objects.data.total} onPage={setPage} />
-          ) : undefined
-        }
-      >
-        <div className="stack">
-          {beyondTechnicalLimit && (
-            <Alert tone="warning">
-              Tek istekte teknik olarak en çok {SELECTION_TECHNICAL_LIMIT.toLocaleString('tr-TR')} nesne
-              gönderilebilir. Bu bir ürün sınırı değil, isteğin boyut sınırıdır; seçimi azaltıp kalan nesneleri ayrı
-              bir incelemede çalıştırın.
-            </Alert>
-          )}
-          {!beyondTechnicalLimit && selected.length > LARGE_RUN_NOTICE && (
-            <Alert tone="info">
-              Büyük seçim: inceleme her nesne için her kuralı yapay zekâ modeline ayrı sorar ve saatler sürebilir.
-              Bitene kadar bu sekmeyi açık tutun; bağlantı koparsa ya da uygulama yeniden başlatılırsa sonuç
-              saklanmaz.
-            </Alert>
-          )}
-          <div className="row">
-            <div className="field grow">
-              <label className="field-label" htmlFor="object-search">
-                Ara
-              </label>
-              <input
-                id="object-search"
-                className="input"
-                type="search"
-                value={text}
-                maxLength={200}
-                placeholder="Şema, ad veya tür…"
-                disabled={!database}
-                onChange={(event) => filterChanged(() => setText(event.target.value))}
-              />
-            </div>
-            <div className="field">
-              <label className="field-label" htmlFor="object-type">
-                Tür
-              </label>
-              <select
-                id="object-type"
-                className="select"
-                value={type}
-                disabled={!database}
-                onChange={(event) => filterChanged(() => setType(event.target.value))}
-              >
-                <option value="">Tüm türler</option>
-                {OBJECT_TYPES.map((option) => (
-                  <option key={option.code} value={option.code}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label className="field-label" htmlFor="object-from-date">
-                Bu tarihten sonra oluşturulan veya değişen
-              </label>
-              <input
-                id="object-from-date"
-                className="input"
-                type="date"
-                value={fromDate}
-                disabled={!database}
-                onChange={(event) => filterChanged(() => setFromDate(event.target.value))}
-              />
-            </div>
           </div>
-          {!database && <EmptyState title="Nesne listesini görmek için bir veritabanı seçin." />}
-          {objects.status === 'error' && <ErrorState message={describeError(objects.error)} onRetry={objects.reload} />}
-          {objects.status === 'loading' && objects.data === undefined && <LoadingState label="Nesneler yükleniyor…" />}
-          {objects.data && objects.data.items.length === 0 && <EmptyState title="Süzgeçlere uyan nesne yok." />}
-          {objects.data && matching > 0 && (
-            <div className="row">
-              {gathering ? (
-                <>
-                  <p className="subtle tabular grow" role="status">
-                    Süzgece uyan nesneler seçiliyor… {gather.loaded.toLocaleString('tr-TR')} /{' '}
-                    {gather.total.toLocaleString('tr-TR')}
-                  </p>
-                  <Button size="sm" onClick={stopGathering}>
-                    Vazgeç
-                  </Button>
-                </>
-              ) : (
-                <Button size="sm" onClick={() => void selectAllMatching()} disabled={running}>
-                  Süzgece uyan {matching.toLocaleString('tr-TR')} nesnenin tümünü seç
-                </Button>
-              )}
-              {gather.status === 'done' && (
-                <p className="subtle" role="status">
-                  Süzgece uyan {gather.matched.toLocaleString('tr-TR')} nesne seçildi.
-                </p>
-              )}
-            </div>
-          )}
-          {gather.status === 'error' && <Alert tone="error">{gather.message}</Alert>}
-          {objects.data && objects.data.items.length > 0 && (
-            <div aria-busy={objects.status === 'loading'}>
-              <ObjectTable
-                database={database}
-                objects={objects.data.items}
-                selection={selection}
-                onToggle={(object, value) => setSelection((current) => toggleSelection(current, database, object, value))}
-                onToggleAll={(items, value) => setSelection((current) => toggleAll(current, database, items, value))}
-              />
-            </div>
-          )}
-        </div>
-      </Card>
+        </aside>
+      </div>
     </div>
   );
 }

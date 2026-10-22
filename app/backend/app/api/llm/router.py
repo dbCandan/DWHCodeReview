@@ -9,12 +9,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth.dependencies import CurrentContext, require_any_role
+from app.api.auth.dependencies import (
+    CurrentContext,
+    require_super_admin,
+)
 from app.api.integrations import get_llm_connection_store, get_llm_resolver
 from app.api.route_classes import MethodScopedRoute
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
-from app.domain.models.role import ROLE_RULE_MANAGER
 from app.infrastructure.llm.network import Resolver
 from app.schemas.llm.contracts import (
     LlmCallSummaryItem,
@@ -31,7 +33,7 @@ from app.services.llm_connection_service import LlmConnectionService, LlmConnect
 
 _RESPONSES: dict[int | str, dict[str, str]] = {
     401: {"description": "Oturum yok"},
-    403: {"description": "Kural yöneticisi değil"},
+    403: {"description": "Süper yönetici değil"},
 }
 
 
@@ -57,7 +59,7 @@ def _router() -> APIRouter:
     return APIRouter(
         tags=["llm"],
         route_class=MethodScopedRoute,
-        dependencies=[Depends(require_any_role(ROLE_RULE_MANAGER))],
+        dependencies=[Depends(require_super_admin())],
         responses=_RESPONSES,
     )
 

@@ -105,3 +105,10 @@ geçti) kanıtıdır. Yerel tarayıcı kanıtı (L2, gerçek istemcide gözlem) 
   `DWHCODEREVIEW_ADMIN_PASSWORD` gizli değişkenini tanımlayıp dağıtım adımının ortamına eşlemesinden
   sonra ilk dağıtımda `admin` girişi ve `created` olayı, sonraki dağıtımda `exists` olayı ve
   değişmeyen parola. Sahibin değişkeni eklemesini ve Azure koşumunu bekliyor.
+
+## 1.3.0 revizyonu (2026-10-15)
+
+- [x] Task 18 — Decision 14: `APPLICATION_ROLES` yalnız `inceleyici`; kural yöneticisine bağlı uçlar
+  süper yöneticiye (`require_super_admin`), ortak uçlar `inceleyici`ye bağlandı; rol değiştirme ucu ve
+  yayın isteği uçları kaldırıldı; göç `202610150001_single_application_role` ve testi
+  `test_single_application_role_migration.py`; ön yüz "Kullanıcı" etiketi, rol seçimi kalktı; e2e 01-04.

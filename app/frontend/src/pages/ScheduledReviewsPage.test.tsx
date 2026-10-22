@@ -88,15 +88,15 @@ describe('scheduled reviews page (scheduled-review-email Requirement 9)', () => 
       ]),
     );
     renderWithSession(<ScheduledReviewsPage />);
-    const first = (await screen.findByText('Gece taraması')).closest('tr')!;
+    const first = await screen.findByRole('article', {name: 'Gece taraması'});
     expect(within(first).getByText('Her gün 07:30 (Europe/Istanbul)')).toBeInTheDocument();
     expect(within(first).getByText('Güvenlik')).toBeInTheDocument();
     expect(within(first).getByText('Etkin')).toBeInTheDocument();
     expect(within(first).getByText('Henüz çalışmadı')).toBeInTheDocument();
     expect(within(first).queryByRole('button', {name: /şimdi çalıştır/})).toBeNull();
 
-    const second = screen.getByText('Haftalık rapor').closest('tr')!;
-    expect(within(second).getByText('Başka Kişi')).toBeInTheDocument();
+    const second = screen.getByRole('article', {name: 'Haftalık rapor'});
+    expect(within(second).getByText(/Başka Kişi/)).toBeInTheDocument();
     expect(within(second).getByText('Tüm kurallar')).toBeInTheDocument();
     expect(within(second).getByText('Her pazartesi 09:00 (Europe/Istanbul)')).toBeInTheDocument();
     expect(within(second).getByText('Duraklatıldı')).toBeInTheDocument();

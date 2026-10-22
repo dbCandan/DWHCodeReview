@@ -2,6 +2,7 @@ import {useState, type FormEvent} from 'react';
 import {Navigate, useLocation, useNavigate} from 'react-router';
 import {LoginShowcase} from '@/components/auth/LoginShowcase';
 import {BrandMark} from '@/components/brand/BrandMark';
+import {Backdrop} from '@/components/layout/Backdrop';
 import {Alert} from '@/components/ui/Alert';
 import {Button} from '@/components/ui/Button';
 import {Field} from '@/components/ui/Field';
@@ -64,6 +65,7 @@ export default function LoginPage() {
 
   return (
     <main className="login-shell">
+      <Backdrop />
       <div className="login-panel">
         <header className="login-header">
           <div className="login-brand">

@@ -41,7 +41,7 @@ STORED_PASSWORD = f"kayitli-{uuid4().hex}"
 STORED = SqlServerConnectionConfig(
     server="sql-dev.corp.example.test", port=1433, user="gelistirici", password=STORED_PASSWORD
 )
-CONTEXT = RequestContext(subject=uuid4(), roles=frozenset({"kural-yoneticisi"}))
+CONTEXT = RequestContext(subject=uuid4(), roles=frozenset({"inceleyici"}))
 SUPER_ADMIN = RequestContext(subject=uuid4(), is_super_admin=True)
 KEY = base64.b64encode(os.urandom(32)).decode()
 _KEPT_VARIABLES = {"DWHCODEREVIEW_JWT_PRIVATE_KEY", "DWHCODEREVIEW_DATABASE_URL"}

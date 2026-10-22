@@ -2,19 +2,22 @@
 
 Status: Accepted
 
-Version: 1.2.0
+Version: 1.3.0
 
-Acceptance date: 2026-09-27
+Acceptance date: 2026-10-15
 
 Domain: [application-foundation](../../DOMAIN.md)
 
 Kabul kaydı: Proje sahibi bu PRD'yi 2026-09-27'de, açık sorulardaki önerileri ve Decision 13'teki
-nonprod ilk süper yönetici kararı dahil sahip kararlarını benimseyerek kabul etti.
+nonprod ilk süper yönetici kararı dahil sahip kararlarını benimseyerek kabul etti. 1.3.0
+revizyonunu (Decision 14: tek uygulama rolü) proje sahibi 2026-10-15'te "artık kural yöneticisi diye bir
+rol olmamalı; normal kullanıcı ve süper admin olmalı" kararıyla kabul etti.
 
 ## Amaç
 
 Kullanıcının kurum Active Directory hesabıyla (kurumun merkezi kullanıcı dizini) giriş yapması ve
-`inceleyici` ya da `kural-yoneticisi` rolüyle yetkilendirilmesi. Dizin girişi LDAPS (dizine
+`inceleyici` rolüyle (arayüzde "Kullanıcı") yetkilendirilmesi; diğer her yetki süper yöneticidedir
+(Decision 14). Dizin girişi LDAPS (dizine
 şifreli bağlantı) üzerinden yalnız kullanıcı adı ve parolayı doğrular; kullanıcı eşitleme ve dizinde
 arama yoktur. Oturum, iskeletin mevcut JWT (uygulamanın imzaladığı kısa ömürlü oturum belirteci)
 yapısı üzerine kurulur; statik API anahtarı koruması kaldırılır.
@@ -42,7 +45,7 @@ alır; her giriş, çıkış ve rol değişikliği bir denetim olayı üretir.
   arama, grup ve yönetici zinciri okuma yoktur.
 - Decision 3: Parola uygulamada saklanmaz, loglanmaz, JWT'ye girmez; yalnız o anki doğrulama için
   dizine iletilir. Dizin kullanıcısının kaydında parola özeti bulunmaz.
-- Decision 4: Roller yalnız `inceleyici` ve `kural-yoneticisi`dir; süper yönetici dışındaki her
+- Decision 4: (1.3.0 ile Decision 14'e bırakıldı) Roller yalnız `inceleyici` ve `kural-yoneticisi`dir; süper yönetici dışındaki her
   kullanıcının en fazla bir rolü vardır. `kural-yoneticisi`, `inceleyici`nin yapabildiği her şeyi
   yapar. İskeletin `super_admin` rolü uygulama yöneticisine aittir ve bu API ile verilemez.
 - Decision 5: Yetki backend sınırında denetlenir. Menü veya düğme gizlemek yetki kontrolü değildir.
@@ -97,8 +100,7 @@ ve son giriş zamanı güncellenir; kayıt ikinci kez açılmaz. Aynı e-postaya
 giriş 409 `identity_conflict` ile reddedilir ve süper yöneticinin çözmesi beklenir.
 
 Requirement 5: Uygulama yöneticisi kullanıcıları sayfalı listeler, süper yönetici dışındaki bir
-kullanıcının rolünü `inceleyici` ↔ `kural-yoneticisi` arasında değiştirir, hesabı pasifleştirir veya
-yeniden etkinleştirir. Pasif hesap dizin parolası doğru olsa da 403 `user_inactive` alır. Rol veya
+kullanıcının hesabını pasifleştirir veya yeniden etkinleştirir; seçilecek rol yoktur (Decision 14). Pasif hesap dizin parolası doğru olsa da 403 `user_inactive` alır. Rol veya
 durum değişikliği o kullanıcının açık yenileme oturumlarını kapatır (rules/58: yetki değişiminde
 oturum yenilenir) ve aynı işlemde PostgreSQL'deki değişiklik kaydı tablosuna (yapan, hedef, değişen
 alan, eski ve yeni değer, zaman) yazılır (Decision 10). Süper yönetici hesabının rolü ve durumu bu
@@ -139,7 +141,7 @@ dizin ayarlarından biri eksikse backend başlamaz.
 
 Requirement 12: `X-API-Key` ve `X-Admin-Key` başlıkları hiçbir uçta anlam taşımaz; yalnız bu
 başlıkla gelen istek 401 alır. Kaynaktaki "yönetici anahtarı" ile korunan kural ve LLM çağrı özeti
-işlemleri `kural-yoneticisi` rolüne bağlanır. Rol değiştiren ve kural yayımlayan uçlar rolü
+işlemleri süper yöneticiye bağlanır (Decision 14). Durum değiştiren ve kural yayımlayan uçlar rolü
 veritabanından güncel okur; diğer uçlar JWT'deki rolü kullanır.
 
 Requirement 13: Ön yüzde giriş ekranı ("Kurum kullanıcı adınız ve parolanız"), çıkış düğmesi, oturum
@@ -174,7 +176,6 @@ Taban yol `/api/dwhcodereview/v1`. Hatalar iskeletin tek hata zarfını kullanı
 | `POST /auth/logout` | Yenileme çerezi | 204; çerez silinir | — (çerez yoksa da 204) |
 | `GET /auth/me` | Oturum | 200: kimlik, görünen ad, rol, hesap türü | 401 |
 | `GET /admin/users?page=&size=&q=` | `super_admin` | 200: sayfalı liste, UPN'e göre sıralı | 401, 403 |
-| `PUT /admin/users/{public_id}/role` | `super_admin` | 200: `{"role":"inceleyici"\|"kural-yoneticisi"}` | 400, 403, 404, 409 (süper yönetici hesabı) |
 | `PUT /admin/users/{public_id}/active` | `super_admin` | 200: `{"active":true\|false}` | 400, 403, 404, 409 (kendi hesabı) |
 
 `refresh` ve `logout` çerezle çalıştığından CSRF'e (başka sitenin tarayıcı adına istek göndermesi)
@@ -304,9 +305,8 @@ Requirement 5'teki değişiklik kaydı tablosunda kalıcı saklanır (Decision 1
 ## Kararlar
 
 - Decision 7: İlk girişte herkes `inceleyici` rolünü alır (Requirement 4); bugün uygulama anahtarı
-  bilen herkese açıktır ve inceleme zaten tek salt okunur SQL Server hesabıyla yapılır. İlk
-  `kural-yoneticisi`, kişi bir kez giriş yaptıktan sonra süper yöneticinin kullanıcı yönetimi
-  ekranından atanır.
+  bilen herkese açıktır ve inceleme zaten tek salt okunur SQL Server hesabıyla yapılır. 1.3.0 ile
+  başka rol atanmaz (Decision 14).
 - Decision 8: Yerel parolalı giriş `nonprod`'da yalnız süper yöneticiye açıktır (dizin arızasında
   yönetim ve acil erişim için); `local`'de tüm yerel hesaplara açıktır (Requirement 3).
 - Decision 9: Geliştirici yerelde iki rolü yalnız dizin kapalıyken çalışan
@@ -328,6 +328,13 @@ Requirement 5'teki değişiklik kaydı tablosunda kalıcı saklanır (Decision 1
   depoda, değer dosyalarında, komut argümanlarında, loglarda ve test verisinde yer almaz. Hesap bir
   kez açılır; sonraki dağıtımlar ona dokunmaz. Açılış her ortamda yalnız başlangıç parolası
   verilince çalışır; yerel test hesapları Decision 9'daki komutla açılmaya devam eder.
+- Decision 14: Tek uygulama rolü vardır: `inceleyici` (arayüzde "Kullanıcı"). Kural taslağını
+  düzenleme ve yayımlama, SQL Server ve LLM bağlantı ayarları, LLM çağrı özetleri, tüm incelemeleri
+  görme, zamanlama ayarı ve kullanıcı yönetimi süper yöneticidedir. Kural ve grup önerileri
+  sql-review rule-proposals 2.0.0 Decision 8 ile 2026-10-19'da kaldırıldı. `kural-yoneticisi` rolü 202610150001 göçüyle
+  emekliye ayrılır: atamaları `inceleyici` olur, rol ve eski atamalar yumuşak silinir; rol değiştirme
+  ucu (`PUT /admin/users/{id}/role`) kaldırılır. Proje sahibinin 2026-10-15 kararı. Gerekçe: iki kademeli
+  yetki ve yayın isteği akışı küçük ekip için gereksiz karmaşıklıktır; her yayın tek yetkiliden geçer.
 
 ## Teslim akışı
 

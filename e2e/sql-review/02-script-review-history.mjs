@@ -1,6 +1,7 @@
 import {expect} from '@playwright/test';
+import {mainMenu, openReview} from './navigation.mjs';
 import {readFile} from 'node:fs/promises';
-import {withBrowser, baseUrl, accounts, message, signIn, apiStatus} from '../shared/harness.mjs';
+import {withBrowser, baseUrl, accounts, signIn, apiStatus} from '../shared/harness.mjs';
 
 /**
  * script-review Acceptance 4-5 and review-history-export Acceptance 4-5 on the local stack.
@@ -16,13 +17,12 @@ const LABEL = `e2e-betik-${Date.now()}`;
 const SQL = ['CREATE PROCEDURE dbo.e2e_load AS', 'BEGIN', '  SELECT id', '  FROM #kaynak WITH (NOLOCK);', 'END'].join('\n');
 
 async function openScriptPage(page) {
-  await page.getByRole('navigation', {name: message('shell.navigation')}).getByRole('link', {name: 'SQL betiği incelemesi'}).click();
-  await page.getByRole('heading', {name: 'SQL betiği incelemesi', level: 1}).waitFor();
+  await openReview(page, 'SQL betiği', 'SQL betiği incelemesi');
 }
 
 await withBrowser('script review, live progress, stop, history and exports', async ({page, assert, newPage}) => {
   const manager = page;
-  await signIn(manager, accounts.ruleManager);
+  await signIn(manager, accounts.superAdmin);
   const previous = (await apiStatus(manager, '/llm-connection')).body;
   const reviewer = await newPage();
   await signIn(reviewer, accounts.reviewer);
@@ -37,7 +37,7 @@ await withBrowser('script review, live progress, stop, history and exports', asy
       return;
     }
 
-    // Rule manager points the running backend at the LLM endpoint (local environment only).
+    // The super admin points the running backend at the LLM endpoint (local environment only).
     await manager.goto(baseUrl + '/ayarlar/llm');
     await manager.getByLabel('İstek biçimi').selectOption('openai');
     await manager.getByLabel('Temel adres').fill(llmBaseUrl);
@@ -63,7 +63,8 @@ await withBrowser('script review, live progress, stop, history and exports', asy
     await live.getByText(/Kural \d+ \/ \d+/).waitFor();
     await live.getByRole('button', {name: 'Analizi durdur'}).click();
     const stoppedAt = Date.now();
-    await live.getByText('İnceleme durduruldu.').first().waitFor();
+    // object-review Decision 9: the stop is a request the server confirms.
+    await live.getByText(/Sunucu durdurmayı doğruladı; LLM çağrıları kesildi\./).waitFor();
     assert.equal(await live.getByRole('button', {name: 'Sonuçları göster'}).count(), 0);
     await live.getByRole('button', {name: 'Kapat'}).click();
     const stopped = (await apiStatus(reviewer, '/review-runs?scope=mine')).body.items[0];
@@ -108,7 +109,7 @@ await withBrowser('script review, live progress, stop, history and exports', asy
     // Another browser of the same reviewer sees the run with its mark, and downloads both files.
     const secondBrowser = await newPage();
     await signIn(secondBrowser, accounts.reviewer);
-    await secondBrowser.getByRole('navigation', {name: message('shell.navigation')}).getByRole('link', {name: 'İnceleme geçmişi'}).click();
+    await mainMenu(secondBrowser).getByRole('link', {name: 'Geçmiş'}).click();
     const row = secondBrowser.getByRole('button', {name: new RegExp(`^${LABEL} — Tamamlandı`)});
     await row.click();
     const detail = secondBrowser.getByRole('region', {name: 'sql.' + LABEL});
@@ -188,5 +189,10 @@ await withBrowser('script review, live progress, stop, history and exports', asy
   }
 }, {
   // Without an LLM endpoint the script review is refused with 503 llm_not_configured by contract.
-  expectedServerErrors: llmBaseUrl ? [] : [/^503 POST .*\/api\/dwhcodereview\/v1\/script-reviews$/],
+  // "İnceleme" opens the object review first; without a SQL Server connection its database list
+  // answers 503 by contract before the switch moves to the script review.
+  expectedServerErrors: [
+    /^503 GET .*\/api\/dwhcodereview\/v1\/databases\?/,
+    ...(llmBaseUrl ? [] : [/^503 POST .*\/api\/dwhcodereview\/v1\/script-reviews$/]),
+  ],
 });

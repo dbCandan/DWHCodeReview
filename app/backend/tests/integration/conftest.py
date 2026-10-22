@@ -271,30 +271,36 @@ class RoleSessions:
         return await self.login("inceleyici")
 
     async def rule_manager(self) -> RoleSession:
-        return await self.login("kural-yoneticisi")
+        """Someone who manages rules and connections: since directory-login Decision 14 a super
+        admin of its own (not the shared one), so tests keep two distinct people."""
+
+        return await self._new_super_admin()
 
     async def super_admin(self) -> RoleSession:
-        """A local super admin; only it publishes directly (sql-review 009-rule-proposals)."""
+        """A local super admin; only it publishes the rules (directory-login Decision 14)."""
 
         if self._super_admin is None:
-            username = f"admin-{uuid4().hex[:10]}"
-            password = secrets.token_urlsafe(24)
-            async with async_session_factory() as session:
-                await ensure_super_admin(
-                    session,
-                    email=f"{username}@example.test",
-                    username=username,
-                    password=password,
-                )
-            response = await self.auth.login(username, password)
-            assert response.status_code == 200, response.text
-            body = response.json()
-            self._super_admin = RoleSession(
-                self.auth.auth_headers(body),
-                body["user"]["public_id"],
-                body["user"]["display_name"],
-            )
+            self._super_admin = await self._new_super_admin()
         return self._super_admin
+
+    async def _new_super_admin(self) -> RoleSession:
+        username = f"admin-{uuid4().hex[:10]}"
+        password = secrets.token_urlsafe(24)
+        async with async_session_factory() as session:
+            await ensure_super_admin(
+                session,
+                email=f"{username}@example.test",
+                username=username,
+                password=password,
+            )
+        response = await self.auth.login(username, password)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        return RoleSession(
+            self.auth.auth_headers(body),
+            body["user"]["public_id"],
+            body["user"]["display_name"],
+        )
 
 
 @pytest.fixture
@@ -379,7 +385,7 @@ class ReviewEnv:
             f"{self.prefix}/rule-set/draft", json=body, headers=manager.headers
         )
         assert saved.status_code == 200, saved.text
-        # Only the super admin publishes directly (009-rule-proposals); in the caller's tenant.
+        # Only the super admin publishes (directory-login Decision 14); in the caller's tenant.
         tenant_header = self.auth.settings.tenant_header
         admin = await self.sessions.super_admin()
         published = await client.post(

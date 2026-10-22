@@ -289,6 +289,27 @@ def build_summary_email(summary: RunSummary, link: str) -> SummaryEmail:
     )
 
 
+def build_test_email(public_origin: str) -> SummaryEmail:
+    """A short message that proves the relay path (Requirement 10); it carries no report data."""
+
+    text = (
+        "Bu ileti, zamanlanmış inceleme özet e-postasının kurumsal SMTP üzerinden "
+        "gidebildiğini denemek için gönderildi.\n\n"
+        f"Uygulama: {public_origin}\n"
+    )
+    body = (
+        "<p><strong>Deneme e-postası</strong></p>"
+        "<p>Bu ileti, zamanlanmış inceleme özet e-postasının kurumsal SMTP üzerinden "
+        "gidebildiğini denemek için gönderildi.</p>"
+        f'<p><a href="{html.escape(public_origin)}">Uygulamayı aç</a></p>'
+    )
+    return SummaryEmail(
+        subject="Zamanlanmış inceleme: deneme e-postası",
+        text=text,
+        html=f"<!doctype html><html><body>{body}</body></html>",
+    )
+
+
 def email_retry_at(failed_attempts: int, failed_at: datetime) -> datetime | None:
     """When to try again after ``failed_attempts`` failed sends; ``None`` gives up (Decision 7)."""
 

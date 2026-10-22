@@ -32,7 +32,7 @@ function count(value: number | null): string {
 }
 
 /**
- * LLM call summaries for the rule manager (sql-review llm-connection Requirement 10, 11): only
+ * LLM call summaries for the super admin (sql-review llm-connection Requirement 10, 11): only
  * metadata such as model, duration and token counts; never prompts, SQL or model answers.
  */
 export default function LlmCallsPage() {
@@ -97,7 +97,7 @@ export default function LlmCallsPage() {
                     <td className="mono">{call.model}</td>
                     <td>
                       <Badge tone={call.outcome === 'ok' ? 'success' : 'danger'}>{OUTCOME_LABELS[call.outcome]}</Badge>
-                      {call.http_status !== null && <span className="subtle"> HTTP {call.http_status}</span>}
+                      {call.http_status !== null && <span className="subtle nowrap"> HTTP {call.http_status}</span>}
                     </td>
                     <td className="tabular nowrap">{formatNumber(call.duration_ms)} ms</td>
                     <td className="tabular">{count(call.completion_tokens)}</td>

@@ -73,7 +73,7 @@ logger = logging.getLogger("app.scheduled_review")
 # Definitions, queued records and e-mails handled per tick and step; the rest wait for the next.
 CLAIM_BATCH = 50
 # Missing heartbeats of a running run are not a problem: the run reports only at its end.
-_EVENT_IDLE_SECONDS = 60.0
+_EVENT_IDLE_SECONDS = 5.0
 
 _FINISHED_STATES = {
     ReviewRunStatus.COMPLETED.value: ScheduledRunState.COMPLETED,

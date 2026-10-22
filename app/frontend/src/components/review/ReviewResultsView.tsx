@@ -1,7 +1,9 @@
-import {useId, useMemo, useState} from 'react';
+import {createContext, useContext, useId, useMemo, useState} from 'react';
+import {SqlCodeView} from '@/components/review/SqlCodeView';
 import {Alert} from '@/components/ui/Alert';
 import {Badge} from '@/components/ui/Badge';
 import {Button} from '@/components/ui/Button';
+import {lineMarks, referencedLines} from '@/lib/codeLines';
 import {describeError, messageForCode} from '@/lib/errorMessages';
 import {
   NO_FILTER,
@@ -24,6 +26,9 @@ import {
 } from '@/lib/reviewResults';
 import {ReviewService} from '@/services/reviews';
 import type {Finding, ObjectResult, RuleResult} from '@/types/sqlReview';
+
+/** Set inside an object that shows its SQL: a line reference then jumps to the line. */
+const JumpContext = createContext<((line: number) => void) | null>(null);
 
 interface MarkControl {
   enabled: boolean;
@@ -186,6 +191,11 @@ function ObjectResultCard({
     ruleMatches(rule, findingsForRule(result, rule.rule_id), filter),
   );
   const orphans = orphanFindings(result);
+  const sql = result.source_sql ?? null;
+  const marks = useMemo(() => lineMarks(result.findings, result.rule_results), [result]);
+  const [focus, setFocus] = useState<{line: number; seq: number} | null>(null);
+  const jump = (line: number) => setFocus((current) => ({line, seq: (current?.seq ?? 0) + 1}));
+  const score = summary.total > 0 ? Math.round((summary.compliant / summary.total) * 100) : null;
   const summaryText = result.error_code
     ? 'Hata'
     : `${summary.compliant} uyumlu · ${summary.failed} ihlal${summary.unknown ? ` · ${summary.unknown} değerlendirilemedi` : ''}`;
@@ -199,11 +209,14 @@ function ObjectResultCard({
         </span>
         <span className="row">
           <span className="subtle">{summaryText}</span>
+          {score !== null && !result.error_code && <ScoreRing value={score} />}
           <span aria-hidden="true">{open ? '▾' : '▸'}</span>
         </span>
       </button>
       {open && (
-        <div id={bodyId} className="disclosure-body">
+        <JumpContext.Provider value={sql ? jump : null}>
+        <div id={bodyId} className={sql ? 'disclosure-body result-split' : 'disclosure-body'}>
+          <div className="result-rules">
           {result.error_code && (
             <Alert tone="error">{messageForCode(result.error_code) ?? result.error_message ?? 'Nesne incelenemedi.'}</Alert>
           )}
@@ -233,7 +246,10 @@ function ObjectResultCard({
               ))}
             </div>
           )}
+          </div>
+          {sql && <SqlCodeView sql={sql} marks={marks} focus={focus} label="İncelenen SQL" />}
         </div>
+        </JumpContext.Provider>
       )}
     </section>
   );
@@ -257,7 +273,7 @@ function RuleResultLine({rule, findings, control}: {rule: RuleResult; findings: 
             {name}
           </Badge>
         ))}
-        {rule.decision_basis && <span className="subtle mono">{rule.decision_basis}</span>}
+        {rule.decision_basis && <span className="subtle mono wrap-anywhere">{rule.decision_basis}</span>}
         {findings.length > 0 && <span className="subtle">{findings.length} bulgu</span>}
         {markable && (
           <FalsePositiveToggle
@@ -300,11 +316,33 @@ function FindingBlock({finding, index, control}: {finding: Finding; index: numbe
 }
 
 function LineReference({value}: {value: string}) {
+  const jump = useContext(JumpContext);
+  const first = referencedLines(value)[0];
   return (
     <p className="rule-text">
       <span className="subtle">Konum: </span>
-      <span className="line-ref">{value}</span>
+      {jump && first !== undefined ? (
+        <button type="button" className="line-ref line-jump" onClick={() => jump(first)} title="Koddaki satıra git">
+          {value}
+        </button>
+      ) : (
+        <span className="line-ref">{value}</span>
+      )}
     </p>
+  );
+}
+
+/** The share of compliant rules of an object as a small ring. */
+function ScoreRing({value}: {value: number}) {
+  const tone = value >= 90 ? 'is-good' : value >= 60 ? 'is-fair' : 'is-poor';
+  return (
+    <span className={`score-ring ${tone}`} role="img" aria-label={`Uyum %${value}`}>
+      <svg viewBox="0 0 36 36" aria-hidden="true">
+        <circle className="score-track" cx="18" cy="18" r="15.5" />
+        <circle className="score-value" cx="18" cy="18" r="15.5" strokeDasharray={`${value * 0.974} 100`} />
+      </svg>
+      <span className="score-text tabular">{value}</span>
+    </span>
   );
 }
 

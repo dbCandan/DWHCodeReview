@@ -8,15 +8,15 @@ import {ApiError} from '@/lib/apiClient';
 import {clearAuth, writeSession} from '@/lib/authStorage';
 import type {AuthenticatedUser} from '@/types/auth';
 
-export type TestRole = 'inceleyici' | 'kural-yoneticisi' | 'super_admin';
+export type TestRole = 'inceleyici' | 'super_admin';
 
 export function testUser(role: TestRole, overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
   const superAdmin = role === 'super_admin';
   return {
-    public_id: `00000000-0000-4000-8000-00000000000${superAdmin ? 1 : role === 'inceleyici' ? 2 : 3}`,
+    public_id: `00000000-0000-4000-8000-00000000000${superAdmin ? 1 : 2}`,
     tenant_id: '00000000-0000-4000-8000-000000000010',
-    username: superAdmin ? 'admin' : role === 'inceleyici' ? 'ayse.inceleyici' : 'mehmet.kural',
-    display_name: superAdmin ? 'Uygulama Yöneticisi' : role === 'inceleyici' ? 'Ayşe İnceleyici' : 'Mehmet Kural',
+    username: superAdmin ? 'admin' : 'ayse.inceleyici',
+    display_name: superAdmin ? 'Uygulama Yöneticisi' : 'Ayşe İnceleyici',
     account_type: 'local',
     role: superAdmin ? null : role,
     roles: [role],

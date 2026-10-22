@@ -5,7 +5,6 @@ type Schemas = components['schemas'];
 
 export type UserSummary = Schemas['UserSummary'];
 export type UserPage = Schemas['UserPage'];
-export type ApplicationRole = Schemas['RoleChange']['role'];
 
 export type RuleItem = Schemas['RuleItem'];
 export type RuleGroupItem = Schemas['RuleGroupItem'];
@@ -16,20 +15,6 @@ export type RuleSetVersionSummary = Schemas['RuleSetVersionSummary'];
 export type RuleSetVersionDetail = Schemas['RuleSetVersionDetail'];
 export type RuleSetVersionPage = Schemas['RuleSetVersionPage'];
 
-export type RuleProposalCapabilities = Schemas['RuleProposalCapabilities'];
-export type RuleProposalCreate = Schemas['RuleProposalCreate'];
-export type RuleProposalItem = Schemas['RuleProposalItem'];
-export type RuleProposalDetail = Schemas['RuleProposalDetail'];
-export type RuleProposalPage = Schemas['RuleProposalPage'];
-export type RuleProposalStatus = Schemas['RuleProposalItem']['status'];
-export type PublishRequestItem = Schemas['PublishRequestItem'];
-export type PublishRequestDetail = Schemas['PublishRequestDetail'];
-export type PublishRequestPage = Schemas['PublishRequestPage'];
-export type PublishRequestStatus = Schemas['PublishRequestItem']['status'];
-export type RuleSetDiffView = Schemas['RuleSetDiffView'];
-export type DiffRuleItem = Schemas['DiffRuleItem'];
-export type RuleProposerItem = Schemas['RuleProposerItem'];
-export type RuleProposerList = Schemas['RuleProposerList'];
 
 export type SqlConnectionView = Schemas['SqlConnectionView'];
 export type SqlConnectionChange = Schemas['SqlConnectionChange'];
@@ -69,3 +54,7 @@ export type ScheduledRunItem = Schemas['ScheduledRunItem'];
 export type ScheduledRunPage = Schemas['ScheduledRunPage'];
 export type ScheduledRunQueued = Schemas['ScheduledRunQueued'];
 export type ScheduledReviewSettings = Schemas['ScheduledReviewSettings'];
+export type ScheduledEmailStatus = Schemas['ScheduledEmailStatus'];
+export type ScheduledEmailTestResult = Schemas['ScheduledEmailTestResult'];
+export type RunCancelled = Schemas['RunCancelled'];
+export type ScheduledRunStopped = Schemas['ScheduledRunStopped'];

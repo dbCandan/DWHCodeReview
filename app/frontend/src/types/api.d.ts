@@ -166,95 +166,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/dwhcodereview/v1/admin/users/{public_id}/role": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Set Role
-         * @description Assign 'inceleyici' or 'kural-yoneticisi'; repeating the same value changes nothing.
-         */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    public_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["RoleChange"];
-                };
-            };
-            responses: {
-                /** @description Successful Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["RoleChange"];
-                    };
-                };
-                /** @description Geçersiz istek değeri */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Süper yönetici değil */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Kullanıcı yok */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Süper yönetici */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/dwhcodereview/v1/auth/login": {
         parameters: {
             query?: never;
@@ -682,7 +593,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Kural yöneticisi değil */
+                /** @description Süper yönetici değil */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -746,7 +657,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Kural yöneticisi değil */
+                /** @description Süper yönetici değil */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -815,7 +726,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Kural yöneticisi değil */
+                /** @description Süper yönetici değil */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -857,7 +768,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Kural yöneticisi değil */
+                /** @description Süper yönetici değil */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -1129,13 +1040,15 @@ export interface paths {
          * Read Review Run
          * @description One page of the stored objects with their results and false-positive marks.
          *
-         *     Never the SQL text (Requirement 3); ``object_count`` is the total number of objects.
+         *     The SQL text only with ``with_sql`` (Requirement 3, 13), for the code view; whoever reads
+         *     the run may download the same text as the SQL export. ``object_count`` is the total.
          */
         get: {
             parameters: {
                 query?: {
                     page?: number;
                     page_size?: number;
+                    with_sql?: boolean;
                 };
                 header?: never;
                 path: {
@@ -1249,6 +1162,84 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dwhcodereview/v1/review-runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Review Run
+         * @description "Analizi durdur": stop a running run of the caller (the super admin: any run).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    run_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunCancelled"];
+                    };
+                };
+                /** @description Oturum yok */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Koşumun sahibi değil */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Koşum yok, süresi dolmuş veya görme yetkisi yok */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description review_run_not_running: koşum bitmiş */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Validation Error */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HTTPValidationError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1562,596 +1553,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/dwhcodereview/v1/rule-proposals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Proposals
-         * @description The caller's proposals; ``pending`` and ``all`` are the super admin's.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    scope?: "mine" | "pending" | "all";
-                    page?: number;
-                    page_size?: number;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Successful Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["RuleProposalPage"];
-                    };
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        /**
-         * Create Proposal
-         * @description Propose a new rule or a new group of published rules (Requirement 2, 3).
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["RuleProposalCreate"];
-                };
-            };
-            responses: {
-                /** @description Successful Response */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["RuleProposalDetail"];
-                    };
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dwhcodereview/v1/rule-proposals/capabilities": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read Capabilities
-         * @description Whether the caller may propose and decide; the menu uses it (Requirement 7).
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Successful Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["RuleProposalCapabilities"];
-                    };
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dwhcodereview/v1/rule-proposals/{proposal_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read Proposal
-         * @description One proposal; only its proposer and the super admin see it.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    proposal_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Successful Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["RuleProposalDetail"];
-                    };
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dwhcodereview/v1/rule-proposals/{proposal_id}/approve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Approve Proposal
-         * @description Publish the proposal as a new version and write it to the draft (Requirement 5).
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    proposal_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Successful Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["RuleProposalDetail"];
-                    };
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dwhcodereview/v1/rule-proposals/{proposal_id}/reject": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reject Proposal
-         * @description Reject a pending proposal with a reason its proposer sees (Requirement 5).
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    proposal_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["DecisionReason"];
-                };
-            };
-            responses: {
-                /** @description Successful Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["RuleProposalDetail"];
-                    };
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dwhcodereview/v1/rule-proposals/{proposal_id}/withdraw": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Withdraw Proposal
-         * @description The proposer withdraws a pending proposal (Requirement 4).
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    proposal_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Successful Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["RuleProposalDetail"];
-                    };
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dwhcodereview/v1/rule-proposers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Proposers
-         * @description Users holding the "kural önerebilir" permission (Requirement 1).
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Successful Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["RuleProposerList"];
-                    };
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dwhcodereview/v1/rule-proposers/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Grant Proposer
-         * @description Grant the permission to an active user of the tenant.
-         */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    user_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Successful Response */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        post?: never;
-        /**
-         * Revoke Proposer
-         * @description Revoke the permission; the user's pending proposals stay for a decision.
-         */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    user_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Successful Response */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/dwhcodereview/v1/rule-set": {
         parameters: {
             query?: never;
@@ -2278,318 +1679,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/dwhcodereview/v1/rule-set/publish-requests": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Publish Requests
-         * @description Publish requests: all for the super admin, the caller's own for a rule manager.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    status?: ("bekliyor" | "onaylandi" | "reddedildi" | "gecersiz") | null;
-                    page?: number;
-                    page_size?: number;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Successful Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PublishRequestPage"];
-                    };
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        /**
-         * Create Publish Request
-         * @description Send the current draft revision for approval; it replaces a pending request.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["PublishRequestCreate"];
-                };
-            };
-            responses: {
-                /** @description Successful Response */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PublishRequestDetail"];
-                    };
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dwhcodereview/v1/rule-set/publish-requests/{request_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read Publish Request
-         * @description One request with the draft's difference from the latest version while pending.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    request_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Successful Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PublishRequestDetail"];
-                    };
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dwhcodereview/v1/rule-set/publish-requests/{request_id}/approve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Approve Publish Request
-         * @description Publish the requested draft revision; a changed draft makes the request stale.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    request_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Successful Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PublishRequestDetail"];
-                    };
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dwhcodereview/v1/rule-set/publish-requests/{request_id}/reject": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reject Publish Request
-         * @description Reject a pending publish request with a reason the rule manager sees.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    request_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["DecisionReason"];
-                };
-            };
-            responses: {
-                /** @description Successful Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PublishRequestDetail"];
-                    };
-                };
-                /** @description Oturum yok */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Yetki yok */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Validation Error */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["HTTPValidationError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/dwhcodereview/v1/rule-set/versions": {
         parameters: {
             query?: never;
@@ -2650,9 +1739,9 @@ export interface paths {
         put?: never;
         /**
          * Publish
-         * @description Publish the draft as the next immutable version; only the super admin (rule-proposals).
+         * @description Publish the draft as the next immutable version; only the super admin (Decision 14).
          *
-         *     An unchanged draft returns the latest version. A rule manager sends a publish request instead.
+         *     An unchanged draft returns the latest version.
          */
         post: {
             parameters: {
@@ -2690,7 +1779,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Yalnız süper yönetici doğrudan yayımlar (publish_requires_approval) */
+                /** @description Süper yönetici değil */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -2941,6 +2030,130 @@ export interface paths {
             };
         };
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dwhcodereview/v1/scheduled-review-settings/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Scheduled Email Status
+         * @description Whether the summary e-mail can leave this deployment (Requirement 10).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ScheduledEmailStatus"];
+                    };
+                };
+                /** @description Oturum yok */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Rol yetkisi yok */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dwhcodereview/v1/scheduled-review-settings/email/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Scheduled Test Email
+         * @description Send one test message to one corporate address through the SMTP relay (Decision 14).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ScheduledEmailTest"];
+                };
+            };
+            responses: {
+                /** @description Successful Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ScheduledEmailTestResult"];
+                    };
+                };
+                /** @description Oturum yok */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Rol yetkisi yok */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description recipient_invalid veya recipient_domain_not_allowed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description email_test_too_soon */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -3533,6 +2746,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dwhcodereview/v1/scheduled-reviews/{schedule_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop Scheduled Review Run
+         * @description Durdur: end the definition's queued or running run (owner or super admin).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    schedule_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ScheduledRunStopped"];
+                    };
+                };
+                /** @description Oturum yok */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Rol yetkisi yok */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Tanım yok veya görme yetkisi yok */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description scheduled_review_not_running: sırada veya süren koşum yok */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Validation Error */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HTTPValidationError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dwhcodereview/v1/script-reviews": {
         parameters: {
             query?: never;
@@ -3654,7 +2945,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Kural yöneticisi değil */
+                /** @description Süper yönetici değil */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -3696,7 +2987,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Yerelde kural yöneticisi, nonprod'da süper yönetici değil */
+                /** @description Süper yönetici değil */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -3775,7 +3066,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Yerelde kural yöneticisi, nonprod'da süper yönetici değil */
+                /** @description Süper yönetici değil */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -3820,7 +3111,7 @@ export interface components {
             permissions?: string[];
             /** Format: uuid */
             public_id: string;
-            role?: ("inceleyici" | "kural-yoneticisi") | null;
+            role?: "inceleyici" | null;
             roles?: string[];
             /** Format: uuid */
             tenant_id: string;
@@ -3839,14 +3130,6 @@ export interface components {
             page: number;
             page_size: number;
             total: number;
-        };
-        ChangedGroup: {
-            after: components["schemas"]["RuleGroupItem"];
-            before: components["schemas"]["RuleGroupItem"];
-        };
-        ChangedRule: {
-            after: components["schemas"]["DiffRuleItem"];
-            before: components["schemas"]["DiffRuleItem"];
         };
         CompleteEvent: {
             /**
@@ -3868,10 +3151,6 @@ export interface components {
             page_size: number;
             total: number;
         };
-        DecisionReason: {
-            /** @description Rejection reason, 1-500 characters after trimming; shown to the requester. */
-            reason: string;
-        };
         DefinitionFetchEvent: {
             /** @description Empty for a script run. */
             database: string;
@@ -3891,22 +3170,6 @@ export interface components {
         };
         DeletedRuns: {
             deleted_count: number;
-        };
-        DiffRuleItem: {
-            /** @description KuralNN code. */
-            id: string;
-            /** @enum {string} */
-            priority: "critical" | "normal";
-            /** @default false */
-            requires_metadata: boolean;
-            /** @description The rule's named groups in the draft's or version's group order; empty for an ungrouped rule. A rule may belong to several groups. */
-            rule_group_ids?: string[];
-            /**
-             * @description One-sentence summary shown instead of the text to everyone but the super admin, at most 200 characters on one line; empty when not given (rule-management Requirement 12).
-             * @default
-             */
-            summary: string;
-            text: string;
         };
         ErrorEvent: {
             code: string;
@@ -4143,6 +3406,8 @@ export interface components {
             parse_warning: string | null;
             rule_results: components["schemas"]["RuleResultItem"][];
             schema: string;
+            /** @description The reviewed SQL text; in the history only when asked for with with_sql (review-history-export Requirement 13), null when it was not stored. */
+            source_sql?: string | null;
             type_code: string;
         };
         ObjectReviewRequest: {
@@ -4187,52 +3452,6 @@ export interface components {
             phase: "object_start";
             schema: string;
             type_code: string;
-        };
-        PublishRequestCreate: {
-            /** @description The draft revision the rule manager saw. */
-            base_revision: number;
-        };
-        PublishRequestDetail: {
-            /** Format: date-time */
-            created_at: string;
-            decided_at: string | null;
-            decided_by_name: string | null;
-            /** @description Draft against the latest version while the request is pending; else empty. */
-            diff: components["schemas"]["RuleSetDiffView"] | null;
-            /** @description True while pending when the draft changed after the request; approving fails. */
-            draft_changed: boolean;
-            draft_revision: number;
-            /** @description public_id of the publish request. */
-            id: string;
-            owned: boolean;
-            published_version_number: number | null;
-            rejection_reason: string | null;
-            requester_name: string;
-            /** @enum {string} */
-            status: "bekliyor" | "onaylandi" | "reddedildi" | "gecersiz";
-        };
-        PublishRequestItem: {
-            /** Format: date-time */
-            created_at: string;
-            decided_at: string | null;
-            decided_by_name: string | null;
-            /** @description True while pending when the draft changed after the request; approving fails. */
-            draft_changed: boolean;
-            draft_revision: number;
-            /** @description public_id of the publish request. */
-            id: string;
-            owned: boolean;
-            published_version_number: number | null;
-            rejection_reason: string | null;
-            requester_name: string;
-            /** @enum {string} */
-            status: "bekliyor" | "onaylandi" | "reddedildi" | "gecersiz";
-        };
-        PublishRequestPage: {
-            items: components["schemas"]["PublishRequestItem"][];
-            page: number;
-            page_size: number;
-            total: number;
         };
         ReviewRunDetail: {
             /**
@@ -4300,10 +3519,6 @@ export interface components {
         };
         /** @description One event of the stream: the JSON on a single ``data:`` line, named by ``phase``. */
         ReviewStreamEvent: components["schemas"]["RunStartedEvent"] | components["schemas"]["ObjectStartEvent"] | components["schemas"]["DefinitionFetchEvent"] | components["schemas"]["SqlReadyEvent"] | components["schemas"]["MetadataFetchEvent"] | components["schemas"]["MetadataReadyEvent"] | components["schemas"]["ObjectErrorEvent"] | components["schemas"]["ObjectDoneEvent"] | components["schemas"]["RulesBatchStartEvent"] | components["schemas"]["RuleStartEvent"] | components["schemas"]["LlmStreamEvent"] | components["schemas"]["RuleDoneEvent"] | components["schemas"]["CompleteEvent"] | components["schemas"]["ErrorEvent"];
-        RoleChange: {
-            /** @enum {string} */
-            role: "inceleyici" | "kural-yoneticisi";
-        };
         RuleDoneEvent: {
             completion_tokens: number | null;
             /** @description Empty for a script run. */
@@ -4351,118 +3566,6 @@ export interface components {
             summary: string;
             text: string;
         };
-        RuleProposalCapabilities: {
-            /** @description The caller decides proposals and publish requests. */
-            can_decide: boolean;
-            /** @description The caller may send rule and group proposals. */
-            can_propose: boolean;
-        };
-        /** @description A new-rule (``kind=rule``) or new-group (``kind=group``) proposal; fields by kind. */
-        RuleProposalCreate: {
-            /** @default  */
-            group_description: string;
-            /** @default  */
-            group_name: string;
-            /** @enum {string} */
-            kind: "rule" | "group";
-            /**
-             * @default normal
-             * @enum {string}
-             */
-            priority: "critical" | "normal";
-            /**
-             * @description Optional short reason; it must not contain personal data or passwords.
-             * @default
-             */
-            rationale: string;
-            /** @default false */
-            requires_metadata: boolean;
-            /** @description Group: KuralNN codes of the latest published version the group holds. */
-            rule_codes?: string[];
-            /** @description Rule: published groups the new rule joins. */
-            rule_group_ids?: string[];
-            /**
-             * @description Rule: one-sentence summary, 1-200 characters on one line.
-             * @default
-             */
-            summary: string;
-            /**
-             * @description Rule: detailed rule text sent to the LLM once approved, 1-8000 characters.
-             * @default
-             */
-            text: string;
-        };
-        RuleProposalDetail: {
-            /** Format: date-time */
-            created_at: string;
-            decided_at: string | null;
-            decided_by_name: string | null;
-            group_description: string;
-            /** @description Group: the proposed name; empty for a rule. */
-            group_name: string;
-            /** @description public_id of the proposal. */
-            id: string;
-            /** @enum {string} */
-            kind: "rule" | "group";
-            /** @description KuralNN code an approved rule received. */
-            new_rule_id: string | null;
-            /** @description True when the caller sent the proposal. */
-            owned: boolean;
-            priority: ("critical" | "normal") | null;
-            proposer_name: string;
-            published_version_number: number | null;
-            rationale: string;
-            rejection_reason: string | null;
-            requires_metadata: boolean;
-            rule_codes: string[];
-            rule_group_ids: string[];
-            /** @enum {string} */
-            status: "bekliyor" | "onaylandi" | "reddedildi" | "geri_cekildi";
-            /** @description Rule: the proposed summary; empty for a group. */
-            summary: string;
-            text: string;
-        };
-        RuleProposalItem: {
-            /** Format: date-time */
-            created_at: string;
-            decided_at: string | null;
-            decided_by_name: string | null;
-            /** @description Group: the proposed name; empty for a rule. */
-            group_name: string;
-            /** @description public_id of the proposal. */
-            id: string;
-            /** @enum {string} */
-            kind: "rule" | "group";
-            /** @description KuralNN code an approved rule received. */
-            new_rule_id: string | null;
-            /** @description True when the caller sent the proposal. */
-            owned: boolean;
-            proposer_name: string;
-            published_version_number: number | null;
-            rejection_reason: string | null;
-            /** @enum {string} */
-            status: "bekliyor" | "onaylandi" | "reddedildi" | "geri_cekildi";
-            /** @description Rule: the proposed summary; empty for a group. */
-            summary: string;
-        };
-        RuleProposalPage: {
-            items: components["schemas"]["RuleProposalItem"][];
-            page: number;
-            page_size: number;
-            total: number;
-        };
-        RuleProposerItem: {
-            display_name: string;
-            /** Format: date-time */
-            granted_at: string;
-            granted_by_name: string | null;
-            /** @description public_id of the user. */
-            user_id: string;
-            username: string;
-        };
-        RuleProposerList: {
-            items: components["schemas"]["RuleProposerItem"][];
-        };
         RuleResultItem: {
             code_snippet: string;
             decision_basis: string | null;
@@ -4480,15 +3583,6 @@ export interface components {
             status: "PASS" | "FAIL" | "NOT_APPLICABLE" | "UNKNOWN";
             /** @enum {string} */
             tier: "critical" | "normal";
-        };
-        /** @description The draft against the latest published version (rule-proposals Requirement 6). */
-        RuleSetDiffView: {
-            added_groups: components["schemas"]["RuleGroupItem"][];
-            added_rules: components["schemas"]["DiffRuleItem"][];
-            changed_groups: components["schemas"]["ChangedGroup"][];
-            changed_rules: components["schemas"]["ChangedRule"][];
-            removed_groups: components["schemas"]["RuleGroupItem"][];
-            removed_rules: components["schemas"]["DiffRuleItem"][];
         };
         RuleSetDraftUpdate: {
             base_revision: number;
@@ -4587,6 +3681,16 @@ export interface components {
             schema: string;
             type_code: string;
         };
+        /** @description Answer of a stop request; the run is stored as cancelled when its task has ended. */
+        RunCancelled: {
+            /** @description public_id of the run. */
+            id: string;
+            /**
+             * @description 'cancelling' = the running task was told to stop; 'cancelled' = no task ran for it in this process, so the run was ended as cancelled at once.
+             * @enum {string}
+             */
+            status: "cancelling" | "cancelled";
+        };
         RunStartedEvent: {
             /**
              * @description True when neither a group nor a rule was selected.
@@ -4621,6 +3725,35 @@ export interface components {
             timezone: string;
             /** @description 0 = Monday to 6 = Sunday; only for weekly. */
             weekday?: number | null;
+        };
+        /** @description Whether the summary e-mail can leave this deployment (Requirement 10, Decision 13). */
+        ScheduledEmailStatus: {
+            /** @description Corporate domains a recipient may use. */
+            allowed_domains: string[];
+            /** @description The in-process scheduler runs in this deployment. */
+            scheduler_enabled: boolean;
+            /** @description The SMTP relay host and the sender are set. */
+            smtp_configured: boolean;
+            /**
+             * @description Encryption the relay must use.
+             * @enum {string}
+             */
+            smtp_security: "starttls" | "tls";
+            /** @description The caller's own address when its domain is allowed; otherwise null. */
+            suggested_recipient: string | null;
+        };
+        ScheduledEmailTest: {
+            /** @description One corporate address that receives the test e-mail (Decision 14). */
+            recipient: string;
+        };
+        ScheduledEmailTestResult: {
+            /** @description Stable failure code such as smtp_unreachable, smtp_tls_failed, smtp_auth_failed, smtp_rejected, smtp_address_not_allowed or smtp_failed. */
+            error_code?: string | null;
+            /**
+             * @description 'sent' = the relay accepted it; 'failed' = see error_code; 'not_configured' = no SMTP relay in this deployment.
+             * @enum {string}
+             */
+            status: "sent" | "failed" | "not_configured";
         };
         ScheduledReviewDetail: {
             can_edit: boolean;
@@ -4728,6 +3861,15 @@ export interface components {
              */
             state: "queued";
         };
+        ScheduledRunStopped: {
+            /** @description public_id of the stopped run record. */
+            id: string;
+            /**
+             * @description 'cancelling' = the running review was told to stop and ends as cancelled; 'cancelled' = the run had not started or no task ran for it, so it ended at once.
+             * @enum {string}
+             */
+            state: "cancelling" | "cancelled";
+        };
         ScriptReviewRequest: {
             label?: string | null;
             /** @description Single rules to review with besides the groups (Decision 6). */
@@ -4812,7 +3954,7 @@ export interface components {
             last_login_at: string | null;
             /** Format: uuid */
             public_id: string;
-            role: ("inceleyici" | "kural-yoneticisi") | null;
+            role: "inceleyici" | null;
             username: string;
         };
         ValidationError: {

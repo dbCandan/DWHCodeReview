@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 import {Link} from 'react-router';
 import {RuleGroupPicker} from '@/components/review/RuleGroupPicker';
 import {Alert} from '@/components/ui/Alert';
@@ -8,6 +8,7 @@ import {Card} from '@/components/ui/Card';
 import {ConfirmDialog} from '@/components/ui/ConfirmDialog';
 import {Dialog} from '@/components/ui/Dialog';
 import {Field} from '@/components/ui/Field';
+import {Icon} from '@/components/ui/Icon';
 import {PageHeader} from '@/components/ui/PageHeader';
 import {Pager} from '@/components/ui/Pager';
 import {EmptyState, ErrorState, LoadingState} from '@/components/ui/States';
@@ -61,6 +62,15 @@ export default function ScheduledReviewsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  // While a run waits or runs, its state is read again so "Sürüyor" turns into the outcome.
+  const anyOpen =
+    list.data?.items.some((item) => item.last_run?.state === 'queued' || item.last_run?.state === 'running') ?? false;
+  const reloadList = list.reload;
+  useEffect(() => {
+    if (!anyOpen) return;
+    const timer = window.setInterval(reloadList, 5000);
+    return () => window.clearInterval(timer);
+  }, [anyOpen, reloadList]);
 
   async function act(item: ScheduledReviewItem, action: () => Promise<unknown>, done: string) {
     setBusyId(item.id);
@@ -79,7 +89,7 @@ export default function ScheduledReviewsPage() {
 
   const data = list.data;
   return (
-    <div className="page">
+    <div className="page page-fill">
       <PageHeader
         title="Zamanlanmış incelemeler"
         description="Seçilen nesneler belirlenen periyotta arka planda incelenir; sonuç geçmişe kaydedilir ve alıcılara özet e-posta gider."
@@ -96,26 +106,15 @@ export default function ScheduledReviewsPage() {
       {data && (
         <Card
           title={`Tanımlar (${data.total})`}
-          bodyClassName="table-wrap"
+          className="card-fill"
           footer={<Pager page={page} pageSize={PAGE_SIZE} total={data.total} onPage={setPage} />}
         >
           {data.items.length === 0 ? (
-            <EmptyState title="Henüz zamanlanmış inceleme yok." />
+            <EmptyState title="Henüz zamanlanmış inceleme yok." icon="clock">
+              Nesneleri belirlediğiniz periyotta arka planda inceletmek için “Yeni zamanlanmış inceleme” ile başlayın.
+            </EmptyState>
           ) : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th scope="col">Ad</th>
-                  <th scope="col">Nesneler</th>
-                  <th scope="col">Kural grupları</th>
-                  <th scope="col">Periyot</th>
-                  <th scope="col">Durum</th>
-                  <th scope="col">Sonraki çalışma</th>
-                  <th scope="col">Son sonuç</th>
-                  <th scope="col">İşlemler</th>
-                </tr>
-              </thead>
-              <tbody>
+            <ul className="list schedule-list">
                 {data.items.map((item) => (
                   <DefinitionRow
                     key={item.id}
@@ -137,10 +136,16 @@ export default function ScheduledReviewsPage() {
                     onRunNow={() =>
                       act(item, () => ScheduledReviewService.runNow(item.id), 'Koşum sıraya alındı.')
                     }
+                    onStop={() =>
+                      act(
+                        item,
+                        () => ScheduledReviewService.stop(item.id),
+                        'Koşum durduruldu; bu koşum için e-posta gönderilmez.',
+                      )
+                    }
                   />
                 ))}
-              </tbody>
-            </table>
+            </ul>
           )}
         </Card>
       )}
@@ -188,6 +193,7 @@ function DefinitionRow({
   onDelete,
   onPause,
   onRunNow,
+  onStop,
 }: {
   item: ScheduledReviewItem;
   busy: boolean;
@@ -196,49 +202,104 @@ function DefinitionRow({
   onDelete: () => void;
   onPause: () => void;
   onRunNow: () => void;
+  onStop: () => void;
 }) {
   const last = item.last_run;
+  // Requirement 11: the owner and the super admin stop a queued or running run.
+  const open = last?.state === 'queued' || last?.state === 'running';
+  const groups =
+    item.rule_groups.length === 0
+      ? 'Tüm kurallar'
+      : item.rule_groups.map((group) => group.name ?? 'Kaldırılmış grup').join(', ');
   return (
-    <tr>
-      <td>
-        <div className="stack-tight">
-          <strong>{item.name}</strong>
-          {!item.owned && <span className="subtle">{item.owner_display_name}</span>}
-          <span className="subtle">{item.recipient_count} alıcı</span>
-        </div>
-      </td>
-      <td className="mono">{item.selection_summary}</td>
-      <td>
-        {item.rule_groups.length === 0
-          ? 'Tüm kurallar'
-          : item.rule_groups.map((group) => group.name ?? 'Kaldırılmış grup').join(', ')}
-      </td>
-      <td>{periodLabel(item.period)}</td>
-      <td>
-        <Badge tone={item.status === 'active' ? 'success' : 'neutral'}>
-          {item.status === 'active' ? 'Etkin' : 'Duraklatıldı'}
-        </Badge>
-      </td>
-      <td>{item.next_run_at ? formatDateTime(item.next_run_at) : '—'}</td>
-      <td>
-        <div className="stack-tight">
-          {last ? (
-            <span>
-              {stateText({state: last.state, skip_reason: null})}
-              {last.finding_count !== null && ` · ${formatNumber(last.finding_count)} bulgu`}
+    <li>
+      <article className={`schedule-card${open ? ' is-live' : ''}`} aria-label={item.name}>
+        <div className="schedule-title">
+          <span className="stat-icon" aria-hidden="true">
+            <Icon name="clock" />
+          </span>
+          <div className="grow stack-tight">
+            <strong className="truncate">{item.name}</strong>
+            <span className="subtle">
+              {!item.owned && `${item.owner_display_name} · `}
+              {item.recipient_count} alıcı
             </span>
-          ) : (
-            <span className="subtle">Henüz çalışmadı</span>
-          )}
-          {last?.error_code && (
-            <span className="subtle">{messageForCode(last.error_code) ?? 'İnceleme tamamlanamadı.'}</span>
-          )}
-          {item.missed && <Badge tone="warning">Kaçırıldı</Badge>}
-          {item.email_failed && <Badge tone="danger">E-posta gönderilemedi</Badge>}
+          </div>
+          <Badge tone={item.status === 'active' ? 'success' : 'neutral'}>
+            {item.status === 'active' ? 'Etkin' : 'Duraklatıldı'}
+          </Badge>
         </div>
-      </td>
-      <td>
-        <div className="row">
+        <dl className="schedule-facts">
+          <div>
+            <dt>Periyot</dt>
+            <dd>{periodLabel(item.period)}</dd>
+          </div>
+          <div>
+            <dt>Nesneler</dt>
+            <dd className="mono truncate" title={item.selection_summary}>
+              {item.selection_summary}
+            </dd>
+          </div>
+          <div>
+            <dt>Kurallar</dt>
+            <dd className="truncate" title={groups}>
+              {groups}
+            </dd>
+          </div>
+          <div>
+            <dt>Sonraki çalışma</dt>
+            <dd>{item.next_run_at ? formatDateTime(item.next_run_at) : '—'}</dd>
+          </div>
+          <div>
+            <dt>Son sonuç</dt>
+            <dd>
+              {last ? (
+                <span className="row">
+                  {open && <span className="pulse-dot" aria-hidden="true" />}
+                  {stateText({state: last.state, skip_reason: null})}
+                  {last.finding_count !== null && ` · ${formatNumber(last.finding_count)} bulgu`}
+                </span>
+              ) : (
+                <span className="subtle">Henüz çalışmadı</span>
+              )}
+              {last?.error_code && (
+                <span className="subtle block">{messageForCode(last.error_code) ?? 'İnceleme tamamlanamadı.'}</span>
+              )}
+            </dd>
+          </div>
+        </dl>
+        {(item.missed || item.email_failed) && (
+          <div className="row">
+            {item.missed && <Badge tone="warning">Kaçırıldı</Badge>}
+            {item.email_failed && <Badge tone="danger">E-posta gönderilemedi</Badge>}
+          </div>
+        )}
+        <div className="schedule-actions">
+          {item.can_edit && open && (
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={onStop}
+              disabled={busy}
+              aria-label={`${item.name} koşumunu durdur`}
+            >
+              Durdur
+            </Button>
+          )}
+          {item.can_run_now && (
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={onRunNow}
+              disabled={busy}
+              aria-label={`${item.name} şimdi çalıştır`}
+            >
+              Şimdi çalıştır
+            </Button>
+          )}
+          <Button size="sm" onClick={onHistory} aria-label={`${item.name} çalışma geçmişi`}>
+            Geçmiş
+          </Button>
           {item.can_edit && (
             <Button size="sm" onClick={onEdit} disabled={busy} aria-label={`${item.name} tanımını düzenle`}>
               Düzenle
@@ -254,15 +315,7 @@ function DefinitionRow({
               {item.status === 'active' ? 'Duraklat' : 'Etkinleştir'}
             </Button>
           )}
-          <Button size="sm" onClick={onHistory} aria-label={`${item.name} çalışma geçmişi`}>
-            Geçmiş
-          </Button>
-          {item.can_run_now && (
-            <Button size="sm" onClick={onRunNow} disabled={busy} aria-label={`${item.name} şimdi çalıştır`}>
-              Şimdi çalıştır
-            </Button>
-          )}
-          {item.can_edit ? (
+          {item.can_edit && (
             <Button
               size="sm"
               variant="danger-outline"
@@ -272,10 +325,10 @@ function DefinitionRow({
             >
               Sil
             </Button>
-          ) : null}
+          )}
         </div>
-      </td>
-    </tr>
+      </article>
+    </li>
   );
 }
 

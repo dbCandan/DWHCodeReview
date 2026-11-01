@@ -7,7 +7,7 @@ runtime role and the schema while the backend already runs; until both exist the
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -71,7 +71,9 @@ async def recorded_revisions(connection: AsyncConnection) -> frozenset[str]:
     if not exists:
         return frozenset()
     result = await connection.execute(text("SELECT version_num FROM alembic_version"))
-    return frozenset(str(revision) for revision in result.scalars())
+    # A textual query carries no column types, so the scalars stay untyped until str() reads them.
+    versions: Iterable[object] = result.scalars()
+    return frozenset(str(revision) for revision in versions)
 
 
 def _error_type(error: BaseException) -> str:

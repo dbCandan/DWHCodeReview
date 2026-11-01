@@ -93,7 +93,7 @@ class RunHeading:
 HEADING_OBJECTS = 4
 
 
-def _finding_count() -> Select[tuple[int]]:
+def _finding_count() -> Select[int]:
     return (
         select(func.count(ReviewFinding.review_finding_id))
         .join(
@@ -346,7 +346,7 @@ class ReviewRepository:
         )
         return int(result.rowcount or 0)  # type: ignore[attr-defined]
 
-    def _runs(self, tenant_id: int) -> Select[tuple[ReviewRun, str, str, int, int]]:
+    def _runs(self, tenant_id: int) -> Select[ReviewRun, str, str, int, int]:
         return (
             select(
                 ReviewRun,

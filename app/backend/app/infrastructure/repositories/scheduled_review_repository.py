@@ -55,7 +55,7 @@ class ScheduledReviewRepository:
 
     # --- definitions ------------------------------------------------------------------------
 
-    def _definitions(self, tenant_id: int) -> Select[tuple[ScheduledReview, str]]:
+    def _definitions(self, tenant_id: int) -> Select[ScheduledReview, str]:
         return (
             select(ScheduledReview, User.display_name)
             .join(User, User.user_id == ScheduledReview.owner_user_id)
@@ -160,7 +160,7 @@ class ScheduledReviewRepository:
         )
         return {int(run_id): int(count) for run_id, count in rows.all()}
 
-    async def _records(self, query: Select[tuple[ScheduledReviewRun]]) -> list[RunRecord]:
+    async def _records(self, query: Select[ScheduledReviewRun]) -> list[RunRecord]:
         trigger_user = aliased(User)
         rows = (
             await self.session.execute(

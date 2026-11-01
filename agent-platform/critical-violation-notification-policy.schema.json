@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "critical-violation-notification-policy.schema.json",
+  "title": "CriticalViolationNotificationPolicy",
+  "description": "Kritik ihlal bildirimi politikası: hangi kaydın kritik sayıldığı, SOME kanalının anında mı günlük özetle mi kullanıldığı, kişiye e-posta gidip gitmediği, dayanak referansları, süreler, tavanlar ve metinler. Bilinmeyen alan kabul edilmez.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "metadata", "verification", "rules", "limits", "templates"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "kind": {"const": "CriticalViolationNotificationPolicy"},
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "owner"],
+      "properties": {
+        "id": {"const": "policy:critical-violation-notification"},
+        "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "owner": {"type": "string", "pattern": "^team:[a-z0-9-]+$"}
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trusted_results", "integrity_results"],
+      "properties": {
+        "trusted_results": {"$ref": "#/$defs/results"},
+        "integrity_results": {"$ref": "#/$defs/results"}
+      }
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {"$ref": "#/$defs/rule"}
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "duplicate_window_hours",
+        "person_emails_per_day",
+        "storm_events_per_hour",
+        "some_fallback_after_minutes",
+        "some_deadline_minutes",
+        "person_deadline_minutes",
+        "worker_interval_seconds",
+        "retry_initial_seconds",
+        "retry_max_seconds",
+        "retry_max_attempts",
+        "directory_refresh_minutes"
+      ],
+      "properties": {
+        "duplicate_window_hours": {"type": "integer", "minimum": 1, "maximum": 168},
+        "person_emails_per_day": {"type": "integer", "minimum": 0, "maximum": 50},
+        "storm_events_per_hour": {"type": "integer", "minimum": 1, "maximum": 100000},
+        "some_fallback_after_minutes": {"type": "integer", "minimum": 1, "maximum": 1440},
+        "some_deadline_minutes": {"type": "integer", "minimum": 1, "maximum": 1440},
+        "person_deadline_minutes": {"type": "integer", "minimum": 1, "maximum": 1440},
+        "worker_interval_seconds": {"type": "integer", "minimum": 5, "maximum": 300},
+        "retry_initial_seconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+        "retry_max_seconds": {"type": "integer", "minimum": 1, "maximum": 86400},
+        "retry_max_attempts": {"type": "integer", "minimum": 1, "maximum": 50},
+        "directory_refresh_minutes": {"type": "integer", "minimum": 5, "maximum": 1440}
+      }
+    },
+    "templates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["person", "some_fallback", "some_digest_fallback", "labels"],
+      "properties": {
+        "person": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/rule_id"},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["subject", "what_happened", "why_it_matters", "what_to_do"],
+            "properties": {
+              "subject": {"$ref": "#/$defs/line"},
+              "what_happened": {"$ref": "#/$defs/paragraph"},
+              "why_it_matters": {"$ref": "#/$defs/paragraph"},
+              "what_to_do": {"$ref": "#/$defs/paragraph"}
+            }
+          }
+        },
+        "some_fallback": {"$ref": "#/$defs/fallback"},
+        "some_digest_fallback": {"$ref": "#/$defs/fallback"},
+        "labels": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "greeting",
+            "what_happened",
+            "why_it_matters",
+            "what_to_do",
+            "details",
+            "record",
+            "device",
+            "occurred_at",
+            "received_at",
+            "locations",
+            "event_type",
+            "project",
+            "fingerprint",
+            "occurrences",
+            "person_notification",
+            "verification",
+            "notification_id",
+            "day",
+            "footer"
+          ],
+          "properties": {
+            "greeting": {"$ref": "#/$defs/line"},
+            "what_happened": {"$ref": "#/$defs/line"},
+            "why_it_matters": {"$ref": "#/$defs/line"},
+            "what_to_do": {"$ref": "#/$defs/line"},
+            "details": {"$ref": "#/$defs/line"},
+            "record": {"$ref": "#/$defs/line"},
+            "device": {"$ref": "#/$defs/line"},
+            "occurred_at": {"$ref": "#/$defs/line"},
+            "received_at": {"$ref": "#/$defs/line"},
+            "locations": {"$ref": "#/$defs/line"},
+            "event_type": {"$ref": "#/$defs/line"},
+            "project": {"$ref": "#/$defs/line"},
+            "fingerprint": {"$ref": "#/$defs/line"},
+            "occurrences": {"$ref": "#/$defs/line"},
+            "person_notification": {"$ref": "#/$defs/line"},
+            "verification": {"$ref": "#/$defs/line"},
+            "notification_id": {"$ref": "#/$defs/line"},
+            "day": {"$ref": "#/$defs/line"},
+            "footer": {"$ref": "#/$defs/paragraph"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "rule_id": {
+      "enum": [
+        "prompt-blocked-secret",
+        "prompt-blocked-personal-data",
+        "review-hard-fail",
+        "review-security-veto",
+        "record-integrity-broken",
+        "event-storm"
+      ]
+    },
+    "results": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "verified",
+          "gap",
+          "mismatch",
+          "rollback",
+          "unanchored",
+          "chain-unavailable",
+          "epoch-restarted"
+        ]
+      }
+    },
+    "line": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[^\\u0000-\\u001f\\u007f{}]+$"},
+    "paragraph": {"type": "string", "minLength": 10, "maxLength": 1200, "pattern": "^[^\\u0000-\\u001f\\u007f{}]+$"},
+    "fallback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "intro"],
+      "properties": {
+        "subject": {"$ref": "#/$defs/line"},
+        "intro": {"$ref": "#/$defs/paragraph"}
+      }
+    },
+    "rule": {
+      "type": "object",
+      "required": ["id", "source", "some", "person"],
+      "properties": {
+        "id": {"$ref": "#/$defs/rule_id"},
+        "source": {
+          "enum": [
+            "prompt-ingress",
+            "review-decision",
+            "collector-verification",
+            "notification-volume"
+          ]
+        },
+        "some": {"enum": ["immediate", "daily-digest"]},
+        "person": {"type": "boolean"}
+      },
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "required": ["decision", "detector_classes"],
+          "properties": {
+            "id": true,
+            "source": {"const": "prompt-ingress"},
+            "decision": {"const": "block"},
+            "detector_classes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "labelled-secret",
+                  "cloud-access-key",
+                  "private-key",
+                  "email",
+                  "tckn",
+                  "iban",
+                  "payment-card",
+                  "phone-number"
+                ]
+              }
+            },
+            "some": true,
+            "person": true
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": ["decision"],
+          "properties": {
+            "id": true,
+            "source": {"const": "review-decision"},
+            "decision": {"enum": ["HARD-FAIL", "FAIL"]},
+            "reason_codes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"type": "string", "pattern": "^AGG_[A-Z0-9_]{1,60}$"}
+            },
+            "some": true,
+            "person": true
+          }
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": true,
+            "source": {"enum": ["collector-verification", "notification-volume"]},
+            "some": {"const": "immediate"},
+            "person": {"const": false}
+          }
+        }
+      ]
+    }
+  }
+}

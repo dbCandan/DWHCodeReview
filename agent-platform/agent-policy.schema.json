@@ -128,39 +128,7 @@
       "type": "string",
       "pattern": "^detector:[a-z][a-z0-9]*(?:[./-][a-z0-9]+)*$"
     },
-    "standardRef": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["standard_id", "control_id", "version", "mapping_status"],
-      "properties": {
-        "standard_id": {"type": "string", "pattern": "^[A-Z0-9][A-Z0-9._/-]{1,63}$"},
-        "control_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,95}$"},
-        "version": {
-          "oneOf": [
-            {"type": "null"},
-            {"$ref": "#/$defs/semver"}
-          ]
-        },
-        "mapping_status": {
-          "enum": ["source-stated-unverified", "institutional-policy-binding"]
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {"mapping_status": {"const": "source-stated-unverified"}},
-            "required": ["mapping_status"]
-          },
-          "then": {"properties": {"version": {"type": "null"}}},
-          "else": {
-            "properties": {
-              "standard_id": {"const": "KT-AGENT-POLICY"},
-              "version": {"$ref": "#/$defs/semver"}
-            }
-          }
-        }
-      ]
-    },
+    "standardRef": {"$ref": "urn:kt:agent-platform:standard-reference:1.0"},
     "control": {
       "type": "object",
       "additionalProperties": false,

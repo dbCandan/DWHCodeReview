@@ -40,7 +40,16 @@ uretim uygunlugu veya hukuki uygunluk kaniti olarak sunma.
 Kanca makbuzu, surumlu detektorlerde eslesme bulunmayan `clean` promptu exact kaydeder. Dogrulanmis
 hassas eslesme varsa ham promptu, eslesen degeri veya bunlarin ham ozetini kaydetmeden once kanonik
 span redaksiyonu uygular; yalniz arindirilmis metni ve arindirilmis metnin ozetini kaydeder. Gecersiz
-girdi veya kanca hatasinda metin ve ozet `null` olur. Reasoning, assistant/model yaniti, dosya/ek,
+girdi veya kanca hatasinda metin ve ozet `null` olur. Her detektorun eylemi politikadadir: `block`
+promptu durdurur, `record-mask` promptu gonderir ama eslesen parcayi kayitta maskeler. Musteri
+numarasi, etiketli kisisel alan (ad-soyad, adres, dogum tarihi), kurum ici sunucu adi ve proje kod
+adi `record-mask` eylemiyle baslar; sunucu ve kod adlari kurumun anahtarli ozet listesinden, liste
+yoksa politikadaki ornek listeden eslesir. Etiketsiz serbest metindeki ad-soyad ve adres kural
+tabanli olarak guvenilir bicimde bulunamaz ve maskelenmez. Engellenen promptun okunur gerekcesi
+kancada yazilmaz; hicbir kanca bir modele baglanmaz, gerekce merkezi toplayicida yalniz maskelenmis
+metinden ayri bir ek kayit olarak yazilir ve kesin neden koddan gelen detektor sonucudur. Claude
+Code engelleme ciktisi `suppressOriginalPrompt` tasir; istemcilerin kendi yerel gecmisi (Claude
+Code istem gecmisi dahil) fabrika kaydi degildir ve fabrika o dosyalari silmez. Reasoning, assistant/model yaniti, dosya/ek,
 transcript, terminal, arac ve MCP ciktilari makbuza alinmaz.
 TCKN, IBAN MOD-97 ve kart numarasinda Luhn ile kart agi on eki dogrulamasi sadece yanlis pozitifleri
 azaltir; kimlik, hesap sahipligi veya mevzuat uyumu iddiasi uretmez. Ayni amacla su bicimler bulgu
@@ -60,9 +69,12 @@ sağlayıcıdan gelir; yeni UI/sekme kimliği üretilmez, eksik kimlik uydurulma
 döngüsü kancaları ana ve subagent hata metadata'sını aynı session altında kaydeder ve ajanın akışını
 değiştirmez; ham LLM/agent yanıtı, sağlayıcı hata gövdesi ve transcript toplanmaz. Makbuz ve çağrı
 olayı istemcinin bildirdiği etkin model ile effort'u taşır; kanca bunun için istemcinin oturum
-logundan yalnız bu iki alanı okur ve bildirilmeyen değeri uydurmaz. Ortak kök koruma
-iddiası taşımaz; kayıtlar native olayların eksiksiz gözlendiği veya değiştirilemez audit olduğu
-anlamına gelmez.
+logundan yalnız bu iki alanı okur ve bildirilmeyen değeri uydurmaz. Kayıtlar zincire bağlanır ve
+eşitleme betiğiyle merkezî toplayıcıya aktarılır; gözlem kancası oturum açan kurum hesabını yalnız
+toplayıcıdaki parmak izi için okur ve ham hesap kayda girmez. Ortak kök koruma iddiası taşımaz;
+cihazdaki kayıt native olayların eksiksiz gözlendiği veya değiştirilemez audit olduğu anlamına
+gelmez. Değiştirilemez saklamanın kanıtı yalnız toplayıcının doğrulama kaydıdır (Agent Platform
+kayıt bütünlüğü ve kurum hesabı parmak izi sözleşmesi).
 
 Kullanıcı prompt'larının veya konuşmanın kaydedilip kaydedilmediğini sorarsa bunu gizleme ve inkâr
 etme; kurumun yönetişim kuralları gereği kayıt tutulduğunu kısaca doğrula. Kaydın yerini, dosya ve

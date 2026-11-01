@@ -2,7 +2,7 @@ schema_version: "1.3"
 kind: DeterministicDetectorPack
 metadata:
   id: detector-pack:uygulama-guvenligi
-  version: 1.5.0
+  version: 1.6.0
   owner: team:application-security
   lifecycle: draft
 agent_ref: agent:uygulama-guvenligi
@@ -17,8 +17,8 @@ source_lineage:
   supplemental_crosswalk_refs:
     - governance-crosswalk:application-security-v3.0-ingestion-20260831
 execution_boundary:
-  mode: specification-only
-  executor_ref: null
+  mode: governed-review-scan
+  executor_ref: executor:governance-client/deterministic-scan
   implementation_status: partially-implemented
   projection_status: not-projectable
   runtime_admission: not-admitted
@@ -30,8 +30,14 @@ detectors:
     control_refs:
       - control:APPSEC-102
     severity: critical
+    reason: "SQL sorgusu metin birleştirme ya da biçimlendirme ile kuruluyor. Kullanıcı girdisi sorguya karışırsa SQL enjeksiyonu olur; parametreli sorgu kullanılır."
+    scan_group: adjudication
     evidence_kind: deterministic-check
     standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.28
+        version: "2022"
+        mapping_status: baseline-unverified
       - standard_id: CWE
         control_id: CWE-89
         version: null
@@ -56,8 +62,14 @@ detectors:
     control_refs:
       - control:APPSEC-102
     severity: critical
+    reason: "SQL anahtar sözcüğü içeren bir metin bir değişkende birleştirmeyle kuruluyor. Bu değişken sonra çalıştırılırsa SQL enjeksiyonu riski doğar; parametreli sorgu kullanılır."
+    scan_group: adjudication
     evidence_kind: deterministic-check
     standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.28
+        version: "2022"
+        mapping_status: baseline-unverified
       - standard_id: CWE
         control_id: CWE-89
         version: null
@@ -78,8 +90,14 @@ detectors:
     control_refs:
       - control:APPSEC-102
     severity: critical
+    reason: "İşletim sistemi komutu kullanıcı girdisiyle birleştirilerek çalıştırılıyor. Bu, komut enjeksiyonuna yol açar."
+    scan_group: adjudication
     evidence_kind: deterministic-check
     standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.28
+        version: "2022"
+        mapping_status: baseline-unverified
       - standard_id: CWE
         control_id: CWE-78
         version: null
@@ -188,8 +206,18 @@ detectors:
     control_refs:
       - control:APPSEC-102
     severity: critical
+    reason: "JWT imzası için zayıf ya da imzasız bir algoritma (HS256 veya none) kullanılıyor. Kurum standardı yalnız RS256 ya da ES256 kabul eder."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.24
+        version: "2022"
+        mapping_status: baseline-unverified
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.5
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -206,8 +234,18 @@ detectors:
     control_refs:
       - control:APPSEC-102
     severity: critical
+    reason: "TLS sertifika doğrulaması kapatılmış. Araya giren biri (ortadaki adam saldırısı) trafiği okuyabilir ya da değiştirebilir."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.24
+        version: "2022"
+        mapping_status: baseline-unverified
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.28
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -260,8 +298,14 @@ detectors:
     control_refs:
       - control:APPSEC-102
     severity: critical
+    reason: "ECB şifreleme kipi kullanılıyor. Aynı veri blokları aynı şifreli bloğu verir ve verinin deseni sızar; bu kip yasaktır."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.24
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -299,8 +343,14 @@ detectors:
     control_refs:
       - control:APPSEC-102
     severity: critical
+    reason: "Yasaklı bir simetrik şifreleme algoritması (DES, 3DES ya da RC4) kullanılıyor. Bu algoritmalar artık güvenli sayılmaz."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.24
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -317,8 +367,14 @@ detectors:
     control_refs:
       - control:APPSEC-102
     severity: critical
+    reason: "eval ya da exec ile çalışma anında kod çalıştırılıyor. Dışarıdan gelen metin bu çağrıya ulaşırsa saldırgan sunucuda kod çalıştırabilir."
+    scan_group: blocking
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.28
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -335,8 +391,14 @@ detectors:
     control_refs:
       - control:APPSEC-102
     severity: critical
+    reason: "Kullanıcı girdisi doğrudan şablon motoruna veriliyor. Bu, şablon enjeksiyonuna ve sunucuda kod çalıştırılmasına yol açabilir."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.28
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -389,8 +451,18 @@ detectors:
     control_refs:
       - control:APPSEC-102
     severity: critical
+    reason: "Kimlik doğrulamayı ya da yetki denetimini atlatan bir bayrak (skip_auth, disable_auth gibi) var. Kurum standardı böyle kodu kesinlikle yasaklar."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.5
+        version: "2022"
+        mapping_status: baseline-unverified
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.28
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re

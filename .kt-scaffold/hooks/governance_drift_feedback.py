@@ -26,6 +26,9 @@ MAX_EVENT_BYTES = 262_144
 MAX_DETAIL_LINES = 3
 MAX_DETAIL_CHARACTERS = 400
 CHECK_TIMEOUT_SECONDS = 8
+# A local client override is not drift a shell command left behind and has no restore route;
+# the commit gate and the governed review stop on it with their own guidance.
+LOCAL_OVERRIDE_EXIT = 3
 
 
 def _project_root() -> Path | None:
@@ -49,7 +52,7 @@ def _drift_detail(root: Path) -> str | None:
         check=False,
         env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
     )
-    if completed.returncode == 0:
+    if completed.returncode in {0, LOCAL_OVERRIDE_EXIT}:
         return None
     lines = [line.strip() for line in completed.stderr.splitlines() if line.strip()]
     detail = "; ".join(lines[:MAX_DETAIL_LINES])[:MAX_DETAIL_CHARACTERS]

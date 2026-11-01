@@ -2,7 +2,7 @@ schema_version: "1.0"
 kind: AgentContract
 metadata:
   id: acik-kaynak-lisansi
-  version: 1.18.0
+  version: 1.20.0
   display_name: Açık Kaynak ve Lisans
   description: Kapıyı geçersiz kılmadan deterministik bağımlılık izin listesi ve lisans politikası sonuçlarını açıklar.
   owner: team:open-source-governance

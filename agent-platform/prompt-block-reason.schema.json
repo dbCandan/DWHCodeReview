@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prompt-block-reason.schema.json",
+  "title": "PromptBlockReason",
+  "description": "Toplayıcının engellenmiş bir istem kaydının yanına yazdığı ek kayıt. Asıl kayıt değişmez. Kesin neden koddan gelir ve yetkilidir; model gerekçesi yalnız bir yorumdur.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source",
+    "deterministic_reason",
+    "reason",
+    "model",
+    "prompt_template_version",
+    "generated_at",
+    "interpretation_only"
+  ],
+  "properties": {
+    "schema": {"const": "kt-prompt-block-reason/v1"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "sha256", "event_id"],
+      "properties": {
+        "object": {"type": "string", "pattern": "^records/[0-9a-f]{64}\\.json$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "event_id": {"type": ["string", "null"], "pattern": "^event:[0-9a-f]{32}$"}
+      }
+    },
+    "deterministic_reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_version", "policy_sha256", "detector_counts"],
+      "properties": {
+        "policy_version": {"type": ["string", "null"]},
+        "policy_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "detector_counts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["detector_id", "class", "action", "count", "lines", "source_ref"],
+            "properties": {
+              "detector_id": {"type": "string"},
+              "class": {"type": "string"},
+              "action": {"enum": ["block", "record-mask"]},
+              "count": {"type": "integer", "minimum": 1},
+              "lines": {"type": "array", "items": {"type": "integer", "minimum": 1}},
+              "source_ref": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "text", "rejection"],
+      "properties": {
+        "status": {
+          "enum": ["written", "template", "rejected", "not-configured", "model-unavailable"]
+        },
+        "text": {"type": ["string", "null"], "maxLength": 600},
+        "rejection": {
+          "enum": [null, "empty", "too-long", "link-or-code", "sensitive-content"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"enum": ["written", "template"]}}},
+          "then": {"properties": {"text": {"type": "string", "minLength": 1}, "rejection": {"const": null}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "rejected"}}},
+          "then": {"properties": {"text": {"const": null}, "rejection": {"type": "string"}}}
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["not-configured", "model-unavailable"]}}},
+          "then": {"properties": {"text": {"const": null}, "rejection": {"const": null}}}
+        }
+      ]
+    },
+    "model": {
+      "description": "Yapılandırmadaki protokol ve model. Model ayarlanmamışsa ya da şablon kullanıldıysa null.",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["protocol", "model"],
+          "properties": {
+            "protocol": {"enum": ["chat-completions-v1"]},
+            "model": {"type": "string", "minLength": 1, "maxLength": 200}
+          }
+        }
+      ]
+    },
+    "prompt_template_version": {"const": "prompt-block-reason-template-v1"},
+    "generated_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "interpretation_only": {"const": true}
+  }
+}

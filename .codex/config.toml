@@ -1,4 +1,4 @@
 # kt-scaffold tarafından ÜRETİLDİ. rules/ dizinini düzenleyip yeniden üretin.
 # Merkezi stdio veya Streamable HTTP MCP kaydını banka yönetir; bu proje kayıt beyan etmez.
 # Üretilen en uzun AGENTS.md zincirini UTF-8 baytlarıyla eksiksiz yükle.
-project_doc_max_bytes = 116043
+project_doc_max_bytes = 120686

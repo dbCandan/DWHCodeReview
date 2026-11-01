@@ -1,13 +1,13 @@
 # Runtime dependency authority. Recompile requirements.txt after changing this file.
 cffi==2.1.1
 fastapi==0.141.1
-uvicorn[standard]==0.52.4
+uvicorn[standard]==0.54.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
 python-dotenv==1.2.3
-sqlalchemy[asyncio]==2.0.52
+sqlalchemy[asyncio]==2.1.1
 asyncpg==0.31.0
-alembic==1.19.2
+alembic==1.20.0
 PyJWT[crypto]==2.15.0
 pwdlib[argon2]==0.3.1
 PyYAML==6.0.3
@@ -23,11 +23,10 @@ httpcore==1.0.9
 # signals are those named in the Gözlemlenebilirlik sections of the sql-review and
 # application-foundation PRDs. Instrumentation is written in app/core/telemetry.py, not taken from
 # instrumentation packages, so no SQL text, URL or body can reach an attribute.
-opentelemetry-api==1.44.0
-opentelemetry-sdk==1.44.0
-opentelemetry-exporter-otlp-proto-grpc==1.44.0
+opentelemetry-api==1.45.1
+opentelemetry-sdk==1.45.1
+opentelemetry-exporter-otlp-proto-grpc==1.45.1
 # Transitive dependencies of the OTLP/gRPC exporter held at their newest release that is at least
 # 30 days old (rules/54); remove a line once the resolver's own choice is past that window.
-grpcio==1.83.1
-protobuf==7.36.1
-googleapis-common-protos==1.75.3
+grpcio==1.84.0
+googleapis-common-protos==1.75.5

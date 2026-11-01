@@ -90,20 +90,33 @@ AGENT_SLUG_RE = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
 # bindings input, so no Agent transcribes identifiers or digests.
 EVALUATED_FIELDS = (
     "agent_id",
+    "candidate_responses",
     "error_code",
     "error_summary",
     "findings",
     "scanned_files",
     "status",
 )
+CANDIDATE_GUIDANCE = {
+    "CANDIDATE_RESPONSE_MISSING": (
+        "Uzman, bağlama dosyasındaki `deterministic_candidates` listesinin her adayına "
+        "`candidate_responses` içinde bir yanıt vermedi. Kural tabanlı taramanın bulduğu her "
+        "eşleşme yanıtlanmalıdır: `confirmed` (gerçek sorun) ya da gerekçeli `dismissed` "
+        "(gerçek sorun değil)."
+    ),
+    "CANDIDATE_RESPONSE_DUPLICATE": (
+        "Aynı aday için birden fazla yanıt var; her aday kimliğine tek yanıt verilir."
+    ),
+    "CANDIDATE_UNKNOWN": (
+        "Yanıttaki aday kimliği bu uzmanın bağlama dosyasında yok; yalnız "
+        "`deterministic_candidates` listesindeki kimlikler yanıtlanır."
+    ),
+    "CANDIDATE_REASON_MISSING": (
+        "Reddedilen (`dismissed`) adayın gerekçesi eksik veya 20 karakterden kısa. Eşleşmenin "
+        "neden gerçek bir sorun olmadığını sade dille yaz; eşleşen değeri yazma."
+    ),
+}
 GUARD_REASON_RE = re.compile(r"[A-Z][A-Z0-9_]{2,63}")
-# One `standard_refs` entry of an Agent policy pack; code binds these controls to every finding.
-POLICY_STANDARD_REF_RE = re.compile(
-    r"^\s*- standard_id: \"?([^\s\"]+)\"?\n"
-    r"\s+control_id: \"?([^\s\"]+)\"?\n"
-    r"\s+version: \"?([^\s\"]+)\"?$",
-    re.MULTILINE,
-)
 GIT_TIMEOUT_SECONDS = 30
 MAX_JSON_BYTES = 4 * 1024 * 1024
 CLIENT_VERSION_RE = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}")
@@ -602,6 +615,983 @@ def _validate_evaluation_scope(project_root: Path, evaluation: dict[str, object]
             raise GovernanceClientError("evaluation-invalid", reason_code="LOCATION_NOT_SCANNED")
 
 
+# The governed-review scan: the regex detectors with hard-fail authority, run by code on the
+# staged blobs.  The patterns are the packs' own; compilation and checksum validators are the
+# prompt-ingress hook's functions, so there is one engine.
+SCAN_EXECUTOR_REF = "executor:governance-client/deterministic-scan"
+SCAN_MODE = "governed-review-scan"
+SCAN_GROUPS = ("blocking", "adjudication")
+SCAN_VALIDATORS = ("tckn-checksum", "iban-mod97", "luhn-checksum")
+SCAN_RECORD_NAME = "reports/deterministic-scan"
+SCAN_CANONICALIZATION = "kt-governed-review-deterministic-scan-json-v1"
+MAX_SCAN_TEXT_BYTES = 8 * 1024 * 1024
+MAX_SCAN_MATCHES = 512
+# Matches past the record limit are counted, not kept; the run is then incomplete anyway.
+MAX_SCAN_COLLECTED = 50_000
+# A large candidate is matched in worker processes of this same file.  Each loads the packs itself
+# and returns their identity, which must equal the parent's; the result never depends on how many
+# workers ran.
+PARALLEL_SCAN_MIN_CHARACTERS = 2 * 1024 * 1024
+PARALLEL_SCAN_CHUNK_CHARACTERS = 2 * 1024 * 1024
+MAX_SCAN_WORKERS = 8
+SCAN_WORKER_TIMEOUT_SECONDS = 120
+# Git checks only the first 8000 bytes to call a file binary; a larger file is never read whole.
+BINARY_PROBE_BYTES = 8000
+SCAN_BLOB_MODES = frozenset({"100644", "100755", "120000"})
+SCAN_GITLINK_MODE = "160000"
+SCAN_FILE_SUMMARIES = {
+    "binary": "`{path}` taranmadı: ikili dosya (metin değil); karar değişmez.",
+    "submodule": (
+        "`{path}` taranmadı: alt modül bağı (başka bir deponun commit kimliği); içeriği bu "
+        "depoda değil, karar değişmez."
+    ),
+    "too-large": (
+        "`{path}` taranamadı: dosya 8 MiB metin sınırını aşıyor. İnceleme bu yüzden "
+        "tamamlanamaz (BLOCKED_INCOMPLETE)."
+    ),
+    "not-utf8": (
+        "`{path}` taranamadı: dosya UTF-8 metin olarak okunamadı. İnceleme bu yüzden "
+        "tamamlanamaz (BLOCKED_INCOMPLETE)."
+    ),
+}
+# Blocks of a pack entry read as lists: the detector's own controls and every entry's standard
+# references.  Other blocks (source lineage, detector lists) are not needed by the client.
+PACK_LIST_BLOCKS = frozenset({"control_refs", "standard_refs"})
+SCAN_MATCH_SUMMARIES = {
+    "blocking": (
+        "`{detector}` kuralı `{path}` dosyasının {lines} eşleşti; eşleşen değer kayda "
+        "yazılmadı. Bu kesin kuraldır: eşleşme bulgu sayılır."
+    ),
+    "adjudication": (
+        "`{detector}` kuralı `{path}` dosyasının {lines} eşleşti; eşleşen değer kayda "
+        "yazılmadı. Uzman ajan bu eşleşmenin gerçek bir sorun olup olmadığını yanıtlar."
+    ),
+}
+
+
+def _scan_failure(reason: str) -> GovernanceClientError:
+    return GovernanceClientError("deterministic-scan-invalid", reason_code=reason)
+
+
+def _pack_scalar(value: str) -> object:
+    """One scalar of the factory-written pack: JSON-quoted, single-quoted, `null`, `[]` or plain."""
+
+    value = value.strip()
+    if value.startswith('"'):
+        try:
+            decoded = json.loads(value)
+        except ValueError:
+            raise _scan_failure("DETECTOR_PACK_INVALID") from None
+        if not isinstance(decoded, str):
+            raise _scan_failure("DETECTOR_PACK_INVALID")
+        return decoded
+    if value.startswith("'"):
+        if len(value) < 2 or not value.endswith("'"):
+            raise _scan_failure("DETECTOR_PACK_INVALID")
+        return value[1:-1].replace("''", "'")
+    if value in {"null", "~"}:
+        return None
+    if value == "[]":
+        return []
+    return value
+
+
+def _pack_sections(text: str) -> dict[str, list[str]]:
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in text.splitlines():
+        if line and not line.startswith((" ", "#")):
+            key = line.split(":", 1)[0]
+            if key in sections:
+                raise _scan_failure("DETECTOR_PACK_INVALID")
+            current = key
+            sections[key] = []
+        elif current is not None:
+            sections[current].append(line)
+    return sections
+
+
+def _pack_entries(lines: list[str]) -> list[dict[str, Any]]:
+    """Each list entry's direct fields, `implementation` mapping, `control_refs` and
+    `standard_refs`; other blocks are skipped.
+
+    The detector and policy packs share this layout, so one reader gives both the detectors and the
+    policy controls.
+    """
+
+    entries: list[dict[str, Any]] = []
+    entry: dict[str, Any] | None = None
+    block: str | None = None
+    listing: str | None = None
+    reference: dict[str, object] | None = None
+    for line in lines:
+        if not line.strip():
+            continue
+        if line.startswith("  - id: "):
+            entry = {"id": _pack_scalar(line[len("  - id: ") :]), "implementation": {}}
+            entries.append(entry)
+            block = listing = None
+            continue
+        if entry is None:
+            raise _scan_failure("DETECTOR_PACK_INVALID")
+        field = re.fullmatch(r"    ([a-z_]+):(?: (.*))?", line)
+        if field is not None:
+            key, value = field.group(1), field.group(2)
+            block = key if value is None else None
+            listing = None
+            reference = None
+            if value is not None or key in PACK_LIST_BLOCKS:
+                if key in entry:
+                    raise _scan_failure("DETECTOR_PACK_INVALID")
+                entry[key] = _pack_scalar(value) if value is not None else []
+            continue
+        if block == "control_refs":
+            item = re.fullmatch(r"      - (.+)", line)
+            if item is None:
+                raise _scan_failure("DETECTOR_PACK_INVALID")
+            entry[block].append(_pack_scalar(item.group(1)))
+            continue
+        if block == "standard_refs":
+            item = re.fullmatch(r"      - ([a-z_]+): (.+)", line)
+            if item is not None:
+                reference = {item.group(1): _pack_scalar(item.group(2))}
+                entry[block].append(reference)
+                continue
+            item = re.fullmatch(r"        ([a-z_]+): (.+)", line)
+            if item is None or reference is None or item.group(1) in reference:
+                raise _scan_failure("DETECTOR_PACK_INVALID")
+            reference[item.group(1)] = _pack_scalar(item.group(2))
+            continue
+        if block != "implementation":
+            continue
+        implementation = entry["implementation"]
+        field = re.fullmatch(r"      ([a-z_]+):(?: (.*))?", line)
+        if field is not None:
+            key, value = field.group(1), field.group(2)
+            if key in implementation:
+                raise _scan_failure("DETECTOR_PACK_INVALID")
+            implementation[key] = [] if value is None else _pack_scalar(value)
+            listing = key if value is None else None
+            continue
+        item = re.fullmatch(r"        - (.+)", line)
+        if item is None or listing is None:
+            raise _scan_failure("DETECTOR_PACK_INVALID")
+        implementation[listing].append(_pack_scalar(item.group(1)))
+    return entries
+
+
+def _scan_pack(
+    raw: bytes, agent_id: str, guard: dict[str, Any], prompt: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """The scanned detectors of one pack; a missing group or wrong boundary refuses the pack."""
+
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeError:
+        raise _scan_failure("DETECTOR_PACK_INVALID") from None
+    sections = _pack_sections(text)
+    boundary: dict[str, object] = {}
+    for line in sections.get("execution_boundary", []):
+        field = re.fullmatch(r"  ([a-z_]+): (.+)", line)
+        if field is not None:
+            boundary[field.group(1)] = _pack_scalar(field.group(2))
+    try:
+        authoritative, unresolved = guard["detector_hard_fail_lists"](raw)
+    except guard["GuardError"]:
+        raise _scan_failure("DETECTOR_PACK_INVALID") from None
+    conflicts = {
+        _pack_scalar(line.split(":", 1)[1])
+        for line in sections.get("decision_metadata", [])
+        if line.startswith("    - detector_id: ")
+    }
+    detectors = _pack_entries(sections.get("detectors", []))
+    identifiers = [item.get("id") for item in detectors]
+    if len(set(identifiers)) != len(identifiers) or not set(authoritative | unresolved) <= set(
+        identifiers
+    ):
+        raise _scan_failure("DETECTOR_PACK_INVALID")
+    pack_sha256 = hashlib.sha256(raw).hexdigest()
+    scanned: list[dict[str, Any]] = []
+    for detector in detectors:
+        implementation = detector["implementation"]
+        selected = (
+            implementation.get("kind") == "regex"
+            and implementation.get("engine") == "python-re"
+            and detector["id"] in authoritative | unresolved
+        )
+        if not selected:
+            if "scan_group" in detector or "validator" in implementation:
+                raise _scan_failure("DETECTOR_PACK_INVALID")
+            continue
+        validator = implementation.get("validator")
+        pattern = implementation.get("pattern")
+        flags = implementation.get("flags")
+        if (
+            detector.get("scan_group") not in SCAN_GROUPS
+            or detector.get("severity") not in guard["SEVERITIES"]
+            or (validator is not None and validator not in SCAN_VALIDATORS)
+            or not isinstance(pattern, str)
+            or not isinstance(flags, list)
+            or not isinstance(detector.get("reason"), str)
+            or not str(detector["reason"]).strip()
+        ):
+            raise _scan_failure("DETECTOR_PACK_INVALID")
+        try:
+            compiled = prompt["_compile_detector"]({"pattern": pattern, "flags": flags})
+        except prompt["GuardError"]:
+            raise _scan_failure("DETECTOR_PACK_INVALID") from None
+        if compiled.search("") is not None:
+            raise _scan_failure("DETECTOR_PACK_INVALID")
+        scanned.append(
+            {
+                "detector_id": detector["id"],
+                "agent_id": agent_id,
+                "scan_group": detector["scan_group"],
+                "severity": detector["severity"],
+                "validator": validator,
+                "hard_fail_list": "authoritative"
+                if detector["id"] in authoritative
+                else "unresolved",
+                "decision_effect": (
+                    "hard-fail"
+                    if detector["id"] in authoritative and detector["id"] not in conflicts
+                    else "blocked-incomplete"
+                ),
+                "detector_pack_sha256": pack_sha256,
+                "pattern": compiled,
+            }
+        )
+    expected = (SCAN_MODE, SCAN_EXECUTOR_REF) if scanned else ("specification-only", None)
+    if (boundary.get("mode"), boundary.get("executor_ref")) != expected:
+        raise _scan_failure("DETECTOR_PACK_INVALID")
+    return scanned
+
+
+def _scan_git(
+    project_root: Path, executable: str | None, arguments: list[str], payload: bytes | None = None
+) -> bytes:
+    resolved = shutil.which("git") if executable in {None, "git"} else executable
+    if resolved is None:
+        raise _scan_failure("CANDIDATE_UNAVAILABLE")
+    environment = os.environ.copy()
+    environment["GIT_OPTIONAL_LOCKS"] = "0"
+    try:
+        completed = subprocess.run(
+            [resolved, "-C", str(project_root), *arguments],
+            input=payload,
+            stdin=None if payload is not None else subprocess.DEVNULL,
+            capture_output=True,
+            check=False,
+            timeout=GIT_TIMEOUT_SECONDS,
+            env=environment,
+        )
+    except (OSError, subprocess.SubprocessError):
+        raise _scan_failure("CANDIDATE_UNAVAILABLE") from None
+    if completed.returncode != 0:
+        raise _scan_failure("CANDIDATE_UNAVAILABLE")
+    return completed.stdout
+
+
+def _staged_blobs(project_root: Path, executable: str | None) -> list[tuple[str, str, str]]:
+    """``(path, mode, object id)`` of every added or changed index entry; deletions are skipped."""
+
+    raw = _scan_git(
+        project_root,
+        executable,
+        ["diff", "--cached", "--raw", "-z", "--no-renames", "--no-abbrev"],
+    )
+    tokens = raw.split(b"\0")
+    if tokens and tokens[-1] == b"":
+        tokens.pop()
+    if len(tokens) % 2:
+        raise _scan_failure("CANDIDATE_UNAVAILABLE")
+    entries: list[tuple[str, str, str]] = []
+    for index in range(0, len(tokens), 2):
+        fields = tokens[index].decode("ascii", "replace").split()
+        try:
+            path = tokens[index + 1].decode("utf-8")
+        except UnicodeError:
+            raise _scan_failure("SCAN_PATH_INVALID") from None
+        if len(fields) != 5 or not fields[0].startswith(":"):
+            raise _scan_failure("CANDIDATE_UNAVAILABLE")
+        status = fields[4][:1]
+        if status == "D":
+            continue
+        if status not in {"A", "M", "T"}:
+            raise _scan_failure("CANDIDATE_UNAVAILABLE")
+        entries.append((path, fields[1], fields[3]))
+    return sorted(entries)
+
+
+def _blob_sizes(project_root: Path, executable: str | None, oids: list[str]) -> dict[str, int]:
+    if not oids:
+        return {}
+    output = _scan_git(
+        project_root,
+        executable,
+        ["cat-file", "--batch-check"],
+        "".join(f"{oid}\n" for oid in oids).encode("ascii"),
+    )
+    sizes: dict[str, int] = {}
+    for line in output.decode("ascii", "replace").splitlines():
+        fields = line.split()
+        if len(fields) != 3 or fields[1] != "blob" or not fields[2].isdigit():
+            raise _scan_failure("CANDIDATE_UNAVAILABLE")
+        sizes[fields[0]] = int(fields[2])
+    if set(sizes) != set(oids):
+        raise _scan_failure("CANDIDATE_UNAVAILABLE")
+    return sizes
+
+
+def _blob_contents(project_root: Path, executable: str | None, oids: list[str]) -> dict[str, bytes]:
+    if not oids:
+        return {}
+    output = _scan_git(
+        project_root,
+        executable,
+        ["cat-file", "--batch"],
+        "".join(f"{oid}\n" for oid in oids).encode("ascii"),
+    )
+    contents: dict[str, bytes] = {}
+    position = 0
+    for oid in oids:
+        header_end = output.find(b"\n", position)
+        fields = output[position:header_end].decode("ascii", "replace").split()
+        if header_end < 0 or len(fields) != 3 or fields[0] != oid or not fields[2].isdigit():
+            raise _scan_failure("CANDIDATE_UNAVAILABLE")
+        start = header_end + 1
+        end = start + int(fields[2])
+        if output[end : end + 1] != b"\n":
+            raise _scan_failure("CANDIDATE_UNAVAILABLE")
+        contents[oid] = output[start:end]
+        position = end + 1
+    return contents
+
+
+def _blob_head(project_root: Path, executable: str | None, oid: str) -> bytes:
+    """The first bytes of an oversized blob, read without loading the rest."""
+
+    resolved = shutil.which("git") if executable in {None, "git"} else executable
+    if resolved is None:
+        raise _scan_failure("CANDIDATE_UNAVAILABLE")
+    environment = os.environ.copy()
+    environment["GIT_OPTIONAL_LOCKS"] = "0"
+    try:
+        with subprocess.Popen(
+            [resolved, "-C", str(project_root), "cat-file", "blob", oid],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=environment,
+        ) as process:
+            stream = process.stdout
+            head = stream.read(BINARY_PROBE_BYTES) if stream is not None else b""
+            process.kill()
+    except (OSError, subprocess.SubprocessError):
+        raise _scan_failure("CANDIDATE_UNAVAILABLE") from None
+    return head
+
+
+def _managed_digests(raw: bytes | None) -> dict[str, str] | None:
+    """The ``managed`` path to SHA-256 map of one scaffold ownership manifest, if it is valid."""
+
+    if raw is None:
+        return None
+    try:
+        payload = _decode(raw)
+    except GovernanceClientError:
+        return None
+    managed = payload.get("managed") if isinstance(payload, dict) else None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("format") != 1
+        or not isinstance(managed, dict)
+        or any(
+            not isinstance(path, str)
+            or not isinstance(digest, str)
+            or DIGEST_RE.fullmatch(digest) is None
+            for path, digest in managed.items()
+        )
+    ):
+        return None
+    return cast(dict[str, str], managed)
+
+
+def _authority_digests(project_root: Path, executable: str | None) -> dict[str, str]:
+    """Digests of the scaffold-managed files the scan may leave out as identical to the authority.
+
+    The source is the scaffold ownership manifest the drift check and `restore` already trust:
+    its staged bytes give the digest, and only paths its committed (`HEAD`) version already
+    manages qualify, so a candidate cannot add a path to the exclusion.  Without both versions
+    nothing is left out.
+    """
+
+    def blob(revision: str) -> bytes | None:
+        try:
+            return _scan_git(project_root, executable, ["cat-file", "blob", revision])
+        except GovernanceClientError:
+            return None
+
+    staged = _managed_digests(blob(f":{MANAGED_MANIFEST_PATH}"))
+    committed = _managed_digests(blob(f"HEAD:{MANAGED_MANIFEST_PATH}"))
+    if staged is None or committed is None:
+        return {}
+    return {path: digest for path, digest in staged.items() if path in committed}
+
+
+def _line_phrase(start: int, end: int) -> str:
+    return f"{start}. satırında" if start == end else f"{start}–{end}. satırlarında"
+
+
+def scan_detectors(project_root: Path) -> list[dict[str, Any]]:
+    """The scanned detectors of the twelve review Agents' packs, in Agent and pack order."""
+
+    guard = _hook_module("agentic_review_receipt_guard.py")
+    prompt = _hook_module("prompt_ingress_guard.py")
+    detectors: list[dict[str, Any]] = []
+    for agent_id in guard["AGENTS"]:
+        relative = f"agent-platform/agents/{agent_id.removeprefix('agent:')}/detectors.yml"
+        try:
+            raw = guard["_regular_file"](project_root, relative, limit=MAX_JSON_BYTES)[1]
+        except guard["GuardError"]:
+            raise _scan_failure("DETECTOR_PACK_INVALID") from None
+        detectors.extend(_scan_pack(raw, agent_id, guard, prompt))
+    return detectors
+
+
+def scan_text(
+    detectors: list[dict[str, Any]], prompt: dict[str, Any], text: str
+) -> list[tuple[int, int, int]]:
+    """``(start, end, detector index)`` of every validated, non-empty match in ``text``."""
+
+    located: list[tuple[int, int, int]] = []
+    for index, detector in enumerate(detectors):
+        for match in detector["pattern"].finditer(text):
+            if match.end() == match.start() or (
+                detector["validator"] is not None
+                and not prompt["_validated_match"](detector["validator"], text, match)
+            ):
+                continue
+            located.append((match.start(), match.end(), index))
+    return located
+
+
+def _detector_identity(detectors: list[dict[str, Any]]) -> list[list[object]]:
+    return [
+        [
+            item["detector_id"],
+            item["detector_pack_sha256"],
+            item["scan_group"],
+            item["validator"],
+            item["pattern"].pattern,
+            item["pattern"].flags,
+        ]
+        for item in detectors
+    ]
+
+
+def _match_texts(
+    project_root: Path,
+    detectors: list[dict[str, Any]],
+    prompt: dict[str, Any],
+    texts: list[tuple[str, str]],
+) -> list[list[tuple[int, int, int]]]:
+    """Each text's matches; a large candidate is split over parallel worker processes."""
+
+    total = sum(len(text) for _, text in texts)
+    workers = min(
+        MAX_SCAN_WORKERS,
+        os.cpu_count() or 1,
+        -(-total // PARALLEL_SCAN_CHUNK_CHARACTERS),
+    )
+    if total < PARALLEL_SCAN_MIN_CHARACTERS or workers < 2 or not sys.executable:
+        return [scan_text(detectors, prompt, text) for _, text in texts]
+    buckets: list[list[int]] = [[] for _ in range(workers)]
+    loads = [0] * workers
+    for index in sorted(range(len(texts)), key=lambda item: (-len(texts[item][1]), item)):
+        lightest = loads.index(min(loads))
+        buckets[lightest].append(index)
+        loads[lightest] += len(texts[index][1])
+    expected = _detector_identity(detectors)
+    results: list[list[tuple[int, int, int]]] = [[] for _ in texts]
+    processes: list[subprocess.Popen[bytes]] = []
+    try:
+        for bucket in buckets:
+            payload = json.dumps(
+                {"project_root": str(project_root), "texts": [texts[item][1] for item in bucket]}
+            ).encode("ascii")
+            process = subprocess.Popen(
+                [sys.executable, str(Path(__file__).resolve()), "scan-worker"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                cwd=str(project_root),
+            )
+            processes.append(process)
+            if process.stdin is None:
+                raise OSError("worker-input-unavailable")
+            process.stdin.write(payload)
+            process.stdin.close()
+        for position, process in enumerate(processes):
+            bucket = buckets[position]
+            output = process.stdout.read() if process.stdout is not None else b""
+            if process.wait(timeout=SCAN_WORKER_TIMEOUT_SECONDS) != 0:
+                raise OSError("worker-failed")
+            value = json.loads(output.decode("ascii"))
+            located = value.get("located") if isinstance(value, dict) else None
+            if (
+                value.get("detectors") != expected
+                or not isinstance(located, list)
+                or len(located) != len(bucket)
+            ):
+                raise OSError("worker-result-invalid")
+            for offset, matches in enumerate(located):
+                results[bucket[offset]] = [
+                    (int(start), int(end), int(index)) for start, end, index in matches
+                ]
+    except (OSError, ValueError, TypeError, AttributeError, subprocess.SubprocessError):
+        raise _scan_failure("SCAN_WORKER_FAILED") from None
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            if process.stdout is not None:
+                process.stdout.close()
+    return results
+
+
+def scan_worker(raw: bytes) -> dict[str, object]:
+    """Match the given texts for a parent scan; it returns the pack identity it used."""
+
+    payload = _decode(raw)
+    if not isinstance(payload, dict) or not isinstance(payload.get("texts"), list):
+        raise _scan_failure("SCAN_WORKER_FAILED")
+    detectors = scan_detectors(Path(str(payload.get("project_root"))))
+    prompt = _hook_module("prompt_ingress_guard.py")
+    return {
+        "detectors": _detector_identity(detectors),
+        "located": [
+            [list(item) for item in scan_text(detectors, prompt, str(text))]
+            for text in payload["texts"]
+        ],
+    }
+
+
+def deterministic_scan(project_root: Path, executable: str | None = None) -> dict[str, object]:
+    """Scan every added or changed staged file with the governed-review detectors.
+
+    The result holds file lists, per-detector counts and each match's detector, path and line
+    range; never the matched value, its digest or the line text.  The same index and the same
+    packs give the same bytes, so `finalize-review` and the commit hook rerun it and compare.
+    """
+
+    guard = _hook_module("agentic_review_receipt_guard.py")
+    prompt = _hook_module("prompt_ingress_guard.py")
+    detectors = scan_detectors(project_root)
+    entries = _staged_blobs(project_root, executable)
+    blobs = [(path, oid) for path, mode, oid in entries if mode in SCAN_BLOB_MODES]
+    unknown = [
+        path for path, mode, _ in entries if mode not in SCAN_BLOB_MODES | {SCAN_GITLINK_MODE}
+    ]
+    if unknown:
+        raise _scan_failure("CANDIDATE_UNAVAILABLE")
+    sizes = _blob_sizes(project_root, executable, sorted({oid for _, oid in blobs}))
+    small = sorted({oid for _, oid in blobs if sizes[oid] <= MAX_SCAN_TEXT_BYTES})
+    contents = _blob_contents(project_root, executable, small)
+    scanned: list[str] = []
+    skipped: list[dict[str, object]] = []
+    unscannable: list[dict[str, object]] = []
+    texts: list[tuple[str, str]] = []
+    authority = _authority_digests(project_root, executable)
+    authority_matched: list[str] = []
+    found: list[tuple[int, int, str, int, int, int, int]] = []
+    counts = [0] * len(detectors)
+    agent_order = {agent_id: position for position, agent_id in enumerate(guard["AGENTS"])}
+
+    def note(target: list[dict[str, object]], path: str, reason: str) -> None:
+        target.append(
+            {
+                "path": path,
+                "reason": reason,
+                "summary": SCAN_FILE_SUMMARIES[reason].format(path=path),
+            }
+        )
+
+    for path, mode, oid in entries:
+        if mode == SCAN_GITLINK_MODE:
+            note(skipped, path, "submodule")
+            continue
+        content = contents.get(oid)
+        if (
+            content is not None
+            and path in authority
+            and hashlib.sha256(content).hexdigest() == authority[path]
+        ):
+            authority_matched.append(path)
+            continue
+        if content is None:
+            head = _blob_head(project_root, executable, oid)
+            note(
+                skipped if b"\0" in head else unscannable,
+                path,
+                "binary" if b"\0" in head else "too-large",
+            )
+            continue
+        if b"\0" in content:
+            note(skipped, path, "binary")
+            continue
+        try:
+            text = content.decode("utf-8")
+        except UnicodeError:
+            note(unscannable, path, "not-utf8")
+            continue
+        scanned.append(path)
+        texts.append((path, text))
+    matched = _match_texts(project_root, detectors, prompt, texts)
+    for position, (path, text) in enumerate(texts):
+        located = matched[position]
+        for _, _, index in located:
+            counts[index] += 1
+        line, position = 1, 0
+        for start, end, index in sorted(located)[: max(0, MAX_SCAN_COLLECTED - len(found))]:
+            line += text.count("\n", position, start)
+            position = start
+            end_line = line + text.count("\n", start, max(start, end - 1))
+            found.append(
+                (agent_order[detectors[index]["agent_id"]], index, path, start, end, line, end_line)
+            )
+    found.sort()
+    matches: list[dict[str, object]] = []
+    ordinals: dict[tuple[int, str], int] = {}
+    for _, index, path, _, _, start_line, end_line in found[:MAX_SCAN_MATCHES]:
+        detector = detectors[index]
+        ordinal = ordinals.get((index, path), 0)
+        ordinals[(index, path)] = ordinal + 1
+        identity = {
+            "detector_id": detector["detector_id"],
+            "path": path,
+            "start_line": start_line,
+            "end_line": end_line,
+            "ordinal": ordinal,
+        }
+        matches.append(
+            {
+                "candidate_id": f"candidate:{_canonical_sha256(identity)[:32]}",
+                "detector_id": detector["detector_id"],
+                "agent_id": detector["agent_id"],
+                "scan_group": detector["scan_group"],
+                "severity": detector["severity"],
+                "path": path,
+                "start_line": start_line,
+                "end_line": end_line,
+                "summary": SCAN_MATCH_SUMMARIES[detector["scan_group"]].format(
+                    detector=detector["detector_id"],
+                    path=path,
+                    lines=_line_phrase(start_line, end_line),
+                ),
+            }
+        )
+    reasons = []
+    if sum(counts) > MAX_SCAN_MATCHES:
+        reasons.append("MATCH_LIMIT_EXCEEDED")
+    if unscannable:
+        reasons.append("UNSCANNABLE_FILE")
+    return {
+        "executor_ref": SCAN_EXECUTOR_REF,
+        "limits": {"max_text_file_bytes": MAX_SCAN_TEXT_BYTES, "max_matches": MAX_SCAN_MATCHES},
+        "status": "incomplete" if reasons else "complete",
+        "incomplete_reasons": reasons,
+        "files": {
+            "scanned": scanned,
+            "authority_matched": authority_matched,
+            "skipped": skipped,
+            "unscannable": unscannable,
+        },
+        "detectors": [
+            {
+                **{key: value for key, value in detector.items() if key != "pattern"},
+                "match_count": counts[index],
+            }
+            for index, detector in enumerate(detectors)
+        ],
+        "matches": matches,
+    }
+
+
+def _scan_record(
+    project_id: str, run_id: str, snapshot_sha256: str, body: dict[str, object]
+) -> dict[str, object]:
+    return {
+        "schema_version": "1.0",
+        "kind": "GovernedReviewDeterministicScan",
+        "canonicalization": SCAN_CANONICALIZATION,
+        "project_id": project_id,
+        "run_id": run_id,
+        "snapshot_sha256": snapshot_sha256,
+        **body,
+        "claim_boundary": {
+            "runtime_admission": False,
+            "production_decision": False,
+            "calibration_complete": False,
+        },
+        "data_handling": {
+            "matched_value_stored": False,
+            "matched_value_digest_stored": False,
+            "line_text_stored": False,
+            "source_content_stored": False,
+        },
+    }
+
+
+# A finding's reason and basis: read from the packs by their structure, checked against the shared
+# standard-reference schema and written from the versioned explanation catalog.  A reference that
+# fails the schema stops the run; a detector with no ISO/KVKK reference says so in its basis line.
+STANDARD_REFERENCE_SCHEMA = "standard-reference.schema.json"
+INSTITUTIONAL_STANDARD = "KT-AGENT-POLICY"
+BASIS_STANDARDS = ("ISO-IEC-27001", "KVKK-6698")
+BASIS_STATUSES = ("unit-verified", "baseline-unverified")
+STANDARD_ORDER = (
+    "ISO-IEC-27001",
+    "KVKK-6698",
+    "CWE",
+    "OWASP-TOP-10",
+    "PCI-DSS",
+    "SLSA",
+    INSTITUTIONAL_STANDARD,
+)
+FINDING_TEMPLATE_NAMES = (
+    "reason",
+    "basis",
+    "basis_unmapped",
+    "source_stated",
+    "institutional",
+)
+FINDING_LABEL_GROUPS = ("statuses", "formats", "titles")
+# Prompt hook messages stay ASCII; Turkish letters become their nearest ASCII letter.
+ASCII_FOLD = str.maketrans("çÇğĞıİöÖşŞüÜâÂîÎûÛ", "cCgGiIoOsSuUaAiIuU")
+
+
+def _basis_failure() -> GovernanceClientError:
+    return GovernanceClientError("finding-basis-invalid", reason_code="FINDING_BASIS_INVALID")
+
+
+def _pack_text(project_root: Path, guard: dict[str, Any], relative: str) -> str:
+    try:
+        raw = guard["_regular_file"](project_root, relative, limit=MAX_JSON_BYTES)[1]
+        return cast(bytes, raw).decode("utf-8")
+    except (guard["GuardError"], UnicodeError):
+        raise _basis_failure() from None
+
+
+def _ordered_references(references: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Catalog order (ISO, KVKK, CWE, OWASP, PCI, SLSA, institutional), each reference once."""
+
+    unique: list[dict[str, object]] = []
+    for reference in references:
+        if reference not in unique:
+            unique.append(reference)
+    return sorted(unique, key=lambda item: STANDARD_ORDER.index(str(item["standard_id"])))
+
+
+def finding_basis(project_root: Path) -> dict[str, dict[str, Any]]:
+    """Every review Agent detector's reason and references, keyed by detector id.
+
+    A detector's references are its own `standard_refs` and those of the policy controls its
+    `control_refs` names.  Every reference must match the shared standard-reference schema;
+    otherwise no explanation is given and the caller stops the run.
+    """
+
+    guard = _hook_module("agentic_review_receipt_guard.py")
+    try:
+        schemas = guard["_schema_registry"](project_root)
+    except guard["GuardError"]:
+        raise _basis_failure() from None
+
+    def checked(references: object) -> list[dict[str, object]]:
+        if not isinstance(references, list):
+            raise _basis_failure()
+        for reference in references:
+            try:
+                guard["_validate_against_schema"](reference, STANDARD_REFERENCE_SCHEMA, schemas)
+            except guard["GuardError"]:
+                raise _basis_failure() from None
+        return cast(list[dict[str, object]], references)
+
+    detectors: dict[str, Any] = {}
+    for agent_id in guard["AGENTS"]:
+        slug = agent_id.removeprefix("agent:")
+        try:
+            policy = _pack_sections(
+                _pack_text(project_root, guard, f"agent-platform/agents/{slug}/policy.yml")
+            )
+            controls = {
+                str(control["id"]): checked(control.get("standard_refs", []))
+                for control in _pack_entries(policy.get("controls", []))
+            }
+            pack = _pack_sections(
+                _pack_text(project_root, guard, f"agent-platform/agents/{slug}/detectors.yml")
+            )
+            entries = _pack_entries(pack.get("detectors", []))
+        except GovernanceClientError:
+            raise _basis_failure() from None
+        for detector in entries:
+            references = list(checked(detector.get("standard_refs", [])))
+            control_refs = detector.get("control_refs", [])
+            if not isinstance(control_refs, list):
+                raise _basis_failure()
+            for control_ref in control_refs:
+                control_id = str(control_ref).removeprefix("control:")
+                if control_id not in controls:
+                    raise _basis_failure()
+                references.extend(controls[control_id])
+            reason = detector.get("reason")
+            detectors[str(detector["id"])] = {
+                "agent_id": agent_id,
+                "reason": reason if isinstance(reason, str) and reason.strip() else None,
+                "references": _ordered_references(references),
+            }
+    return {"detectors": detectors}
+
+
+def _catalog_string(value: str) -> str:
+    try:
+        decoded = json.loads(value)
+    except ValueError:
+        raise _basis_failure() from None
+    if not isinstance(decoded, str):
+        raise _basis_failure()
+    return decoded
+
+
+def finding_catalog(raw: bytes) -> dict[str, dict[str, str]]:
+    """`finding_templates` and `finding_labels` of the versioned explanation catalog."""
+
+    try:
+        lines = raw.decode("utf-8").splitlines()
+        templates_start = lines.index("finding_templates:") + 1
+        labels_start = lines.index("finding_labels:") + 1
+    except (UnicodeError, ValueError):
+        raise _basis_failure() from None
+    catalog: dict[str, dict[str, str]] = {"templates": {}}
+    catalog.update({group: {} for group in FINDING_LABEL_GROUPS})
+    name: str | None = None
+    for line in lines[templates_start:]:
+        if line and not line.startswith(" "):
+            break
+        matched = re.fullmatch(r"  ([a-z_]+):", line)
+        if matched is not None:
+            name = matched.group(1)
+            continue
+        matched = re.fullmatch(r"    text: (\".*\")", line)
+        if matched is not None and name is not None:
+            catalog["templates"][name] = _catalog_string(matched.group(1))
+    group: str | None = None
+    for line in lines[labels_start:]:
+        if line and not line.startswith(" "):
+            break
+        matched = re.fullmatch(r"  ([a-z_]+):", line)
+        if matched is not None:
+            group = matched.group(1)
+            continue
+        matched = re.fullmatch(r"    (\"[^\"]+\"): (\".*\")", line)
+        if matched is not None and group in catalog:
+            catalog[group][_catalog_string(matched.group(1))] = _catalog_string(matched.group(2))
+    if set(catalog["templates"]) != set(FINDING_TEMPLATE_NAMES) or any(
+        not catalog[group] for group in FINDING_LABEL_GROUPS
+    ):
+        raise _basis_failure()
+    return catalog
+
+
+def _reference_text(reference: dict[str, object], catalog: dict[str, dict[str, str]]) -> str:
+    standard = str(reference["standard_id"])
+    control = str(reference["control_id"])
+    pattern = catalog["formats"].get(standard)
+    if pattern is None:
+        raise _basis_failure()
+    title = ""
+    if "{title}" in pattern:
+        title_key = f"{standard} {control.split('/')[0]}"
+        if title_key not in catalog["titles"]:
+            raise _basis_failure()
+        title = catalog["titles"][title_key]
+    try:
+        return pattern.format(control=control, version=reference.get("version") or "", title=title)
+    except (KeyError, IndexError, ValueError):
+        raise _basis_failure() from None
+
+
+def reason_line(reason: str, catalog: dict[str, dict[str, str]]) -> str:
+    return catalog["templates"]["reason"].format(reason=reason)
+
+
+def basis_lines(
+    references: list[dict[str, object]], catalog: dict[str, dict[str, str]]
+) -> list[str]:
+    """The `Dayanak:` lines of one finding, then its unverified source and policy lines."""
+
+    templates = catalog["templates"]
+
+    def joined(items: list[dict[str, object]]) -> str:
+        return "; ".join(_reference_text(item, catalog) for item in items)
+
+    lines: list[str] = []
+    basis = [item for item in references if item["standard_id"] in BASIS_STANDARDS]
+    if not basis:
+        lines.append(templates["basis_unmapped"])
+    for status in BASIS_STATUSES:
+        group = [item for item in basis if item["mapping_status"] == status]
+        if group:
+            label = catalog["statuses"].get(status)
+            if label is None:
+                raise _basis_failure()
+            lines.append(templates["basis"].format(references=joined(group), status=label))
+    stated = [item for item in references if item["mapping_status"] == "source-stated-unverified"]
+    if stated:
+        lines.append(templates["source_stated"].format(references=joined(stated)))
+    institutional = [item for item in references if item["standard_id"] == INSTITUTIONAL_STANDARD]
+    if institutional:
+        lines.append(templates["institutional"].format(references=joined(institutional)))
+    return lines
+
+
+def detector_explanation(
+    detector_id: str, basis: dict[str, dict[str, Any]], catalog: dict[str, dict[str, str]]
+) -> dict[str, object]:
+    """`reason_line` and `basis_lines` of a code finding; a detector without a reason refuses."""
+
+    entry = basis["detectors"].get(detector_id)
+    if entry is None or entry["reason"] is None:
+        raise _basis_failure()
+    return {
+        "reason_line": reason_line(str(entry["reason"]), catalog),
+        "basis_lines": basis_lines(entry["references"], catalog),
+    }
+
+
+def prompt_explanation_lines(project_root: Path, detector_ids: list[str]) -> list[str]:
+    """The ASCII reason and basis lines the prompt hook adds for each matched detector."""
+
+    basis = finding_basis(project_root)
+    guard = _hook_module("agentic_review_receipt_guard.py")
+    try:
+        raw = guard["_regular_file"](project_root, EXPLANATION_TEMPLATES_PATH, limit=MAX_JSON_BYTES)
+    except guard["GuardError"]:
+        raise _basis_failure() from None
+    catalog = finding_catalog(cast(bytes, raw[1]))
+    lines: list[str] = []
+    for detector_id in detector_ids:
+        explanation = detector_explanation(detector_id, basis, catalog)
+        lines.append(str(explanation["reason_line"]))
+        lines.extend(cast(list[str], explanation["basis_lines"]))
+    return [ascii_folded(line) for line in lines]
+
+
+def ascii_folded(text: str) -> str:
+    return text.translate(ASCII_FOLD).encode("ascii", "replace").decode("ascii")
+
+
 def record_observation(run_id: str, agent: str) -> dict[str, object]:
     """Write one specialist report from its bindings input and its returned evaluation.
 
@@ -623,6 +1613,10 @@ def record_observation(run_id: str, agent: str) -> dict[str, object]:
         raise GovernanceClientError("invalid-request")
     bindings = _read_run_input(run_root / "inputs" / f"{agent}.bindings.json")
     evaluation = _read_run_input(run_root / "work" / f"{agent}-evaluation.json")
+    candidates = bindings.get("deterministic_candidates")
+    if "candidate_responses" not in evaluation:
+        # An absent list answers no candidate: it is complete only when there is none to answer.
+        evaluation = {**evaluation, "candidate_responses": []}
     missing = sorted(set(EVALUATED_FIELDS) - set(evaluation))
     unexpected = sorted(set(evaluation) - set(EVALUATED_FIELDS))
     if missing or unexpected:
@@ -642,6 +1636,18 @@ def record_observation(run_id: str, agent: str) -> dict[str, object]:
             "evaluation-invalid",
             reason_code="AGENT_ID_MISMATCH",
             violation={"pointer": "/agent_id", "keyword": "const", "constraint": agent_id},
+        )
+    problem = guard["candidate_response_problem"](
+        candidates, evaluation.get("candidate_responses"), evaluation.get("status")
+    )
+    if problem is not None:
+        # Every rule-based scan candidate needs one answer from its own specialist; a
+        # rejection names the candidate field so the same specialist answers once more.
+        raise GovernanceClientError(
+            "evaluation-invalid",
+            reason_code=problem[0],
+            violation=problem[1],
+            guidance=CANDIDATE_GUIDANCE[problem[0]],
         )
     findings = evaluation.get("findings")
     if isinstance(findings, list):
@@ -683,6 +1689,7 @@ def record_observation(run_id: str, agent: str) -> dict[str, object]:
     # specialist corrects.
     clean = {
         "agent_id": agent_id,
+        "candidate_responses": [],
         "error_code": None,
         "error_summary": None,
         "findings": [],
@@ -725,20 +1732,39 @@ def record_observation(run_id: str, agent: str) -> dict[str, object]:
 
 
 def _policy_standard_refs(project_root: Path, agent: str, error: str) -> list[dict[str, str]]:
-    """The Agent's policy controls in file order, as code binds them to every finding."""
+    """The institutional policy bindings (`KT-AGENT-POLICY`) of the Agent, in file order.
+
+    Code binds these to every specialist finding; a finding's ISO/KVKK basis comes only from a
+    detector, so another standard in a policy control never enters a specialist report.
+    """
 
     path = project_root / "agent-platform" / "agents" / agent / "policy.yml"
     try:
         if path.is_symlink() or not path.is_file():
             raise GovernanceClientError(error, reason_code="POLICY_UNAVAILABLE")
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
+        sections = _pack_sections(path.read_text(encoding="utf-8"))
+        controls = _pack_entries(sections.get("controls", []))
+    except (OSError, UnicodeError, GovernanceClientError):
         raise GovernanceClientError(error, reason_code="POLICY_UNAVAILABLE") from None
     references: list[dict[str, str]] = []
-    for standard_id, control_id, version in POLICY_STANDARD_REF_RE.findall(text):
-        reference = {"standard_id": standard_id, "control_id": control_id, "version": version}
-        if reference not in references:
-            references.append(reference)
+    for control in controls:
+        items = control.get("standard_refs", [])
+        if not isinstance(items, list):
+            raise GovernanceClientError(error, reason_code="POLICY_UNAVAILABLE")
+        for item in items:
+            if (
+                not isinstance(item, dict)
+                or item.get("standard_id") != INSTITUTIONAL_STANDARD
+                or item.get("mapping_status") != "institutional-policy-binding"
+            ):
+                continue
+            reference = {
+                "standard_id": INSTITUTIONAL_STANDARD,
+                "control_id": str(item.get("control_id")),
+                "version": str(item.get("version")),
+            }
+            if reference not in references:
+                references.append(reference)
     return references
 
 
@@ -852,20 +1878,20 @@ def _component_bindings(
         "mandatory_governed_execution": harness,
         "agents": agents,
         "severity_scores": guard["severity_scores"](aggregation_raw),
-        "hard_fail_detectors": {
-            agent_id: guard["detector_hard_fail_lists"](
-                read(f"agent-platform/agents/{agent_id.removeprefix('agent:')}/detectors.yml")
-            )
-            for agent_id in guard["AGENTS"]
-        },
         "explanations": read(EXPLANATION_TEMPLATES_PATH),
     }
 
 
 def _observation_bindings(
-    context: dict[str, Any], components: dict[str, Any], agent_id: str
+    context: dict[str, Any],
+    components: dict[str, Any],
+    agent_id: str,
+    candidates: list[dict[str, Any]],
 ) -> dict[str, object]:
-    """Every observation field of one specialist report except the six it evaluates."""
+    """Every observation field of one specialist report except the ones it evaluates.
+
+    ``candidates`` are the Agent's adjudication matches of the run's rule-based scan record.
+    """
 
     identity = context["agents"][agent_id]
     return {
@@ -885,6 +1911,7 @@ def _observation_bindings(
         "acceptance_criteria": (
             context["acceptance_criteria"] if agent_id == TEST_AUTOMATION_AGENT else None
         ),
+        "deterministic_candidates": candidates,
         "claim_boundary": {
             "deterministic_evidence": False,
             "canonical_conformance": False,
@@ -936,6 +1963,46 @@ def _write_artifact(
     return path, payload, created
 
 
+def _scan_incomplete_guidance(record: dict[str, object]) -> str:
+    """Plain-language reason a scan could not finish; it names files, never their content."""
+
+    files = cast(dict[str, list[dict[str, object]]], record["files"])
+    lines = [str(item["summary"]) for item in files["unscannable"][:5]]
+    if len(files["unscannable"]) > 5:
+        lines.append(f"Taranamayan {len(files['unscannable']) - 5} dosya daha kayıtta listeli.")
+    if "MATCH_LIMIT_EXCEEDED" in cast(list[str], record["incomplete_reasons"]):
+        lines.append(
+            f"Kural tabanlı tarama {MAX_SCAN_MATCHES} eşleşme sınırını aştı; eşleşmeler kayıtta "
+            "sayıldı ama hepsi listelenemedi."
+        )
+    lines.append(
+        "Kural tabanlı tarama (kesin kuralları kodla denetleyen adım) tamamlanamadığı için "
+        "inceleme BLOCKED_INCOMPLETE ile durdu. Dosyayı düzeltip yeniden stage et ve yeni bir "
+        "koşum başlat."
+    )
+    return " ".join(lines)
+
+
+def _scan_summary(run_id: str, record: dict[str, object]) -> dict[str, object]:
+    """What the main Agent reports: blocking matches, candidate counts and skipped files."""
+
+    files = cast(dict[str, list[Any]], record["files"])
+    matches = cast(list[dict[str, object]], record["matches"])
+    return {
+        "record_path": f"governed-review/{run_id}/{SCAN_RECORD_NAME}.json",
+        "status": record["status"],
+        "scanned_file_count": len(files["scanned"]),
+        "authority_matched_files": (
+            f"{len(files['authority_matched'])} dosya taranmadı: otoriteyle birebir"
+        ),
+        "skipped_files": [item["summary"] for item in files["skipped"]],
+        "blocking_matches": [
+            item["summary"] for item in matches if item["scan_group"] == "blocking"
+        ],
+        "candidate_count": sum(1 for item in matches if item["scan_group"] == "adjudication"),
+    }
+
+
 def review_start(
     run_id: str, client_id: str, client_version: str, criteria_path: str
 ) -> dict[str, object]:
@@ -954,6 +2021,7 @@ def review_start(
     ):
         raise GovernanceClientError("invalid-request")
     project_root = Path.cwd().resolve(strict=True)
+    _local_override_gate(project_root)
     project_id = _project_id(project_root)
     guard = _hook_module("agentic_review_receipt_guard.py")
     try:
@@ -964,6 +2032,14 @@ def review_start(
         raise GovernanceClientError(
             "review-start-invalid", reason_code=exc.code, guidance=exc.diagnostic
         ) from None
+    try:
+        scan = deterministic_scan(project_root)
+        # The packs' references and the explanation catalog are checked before any specialist
+        # runs, so a run never reaches a decision it cannot explain.
+        finding_basis(project_root)
+        finding_catalog(components["explanations"])
+    except GovernanceClientError as exc:
+        raise GovernanceClientError("review-start-invalid", reason_code=exc.reason_code) from None
     writer = _hook_module("governance_records.py")
     try:
         run_root = writer["prepare_review_run"](project_id, run_id, location=_record_location())
@@ -1014,11 +2090,28 @@ def review_start(
     _write_artifact(project_id, run_id, "inputs/snapshot", identity)
     _write_artifact(project_id, run_id, "inputs/run", context)
     schemas = guard["_schema_registry"](project_root)
+    record = _scan_record(project_id, run_id, str(snapshot["snapshot_sha256"]), scan)
+    try:
+        guard["_validate_against_schema"](record, guard["SCAN_RECORD_SCHEMA"], schemas)
+    except guard["GuardError"]:
+        raise GovernanceClientError(
+            "review-start-invalid", reason_code="DETERMINISTIC_SCAN_INVALID"
+        ) from None
+    _write_artifact(project_id, run_id, SCAN_RECORD_NAME, record)
+    if record["status"] != "complete":
+        # The record lists what could not be scanned; no specialist is asked to review it.
+        raise GovernanceClientError(
+            "review-start-invalid",
+            reason_code="DETERMINISTIC_SCAN_INCOMPLETE",
+            guidance=_scan_incomplete_guidance(record),
+        )
     agents: list[dict[str, object]] = []
     for agent_id in guard["AGENTS"]:
         slug = agent_id.removeprefix("agent:")
-        bindings = _observation_bindings(context, components, agent_id)
+        candidates = guard["deterministic_candidates"](record, agent_id)
+        bindings = _observation_bindings(context, components, agent_id, candidates)
         clean = {
+            "candidate_responses": [],
             "error_code": None,
             "error_summary": None,
             "findings": [],
@@ -1036,6 +2129,7 @@ def review_start(
             {
                 "agent_id": agent_id,
                 "bindings_path": str(path),
+                "candidate_count": len(candidates),
                 "report": "written"
                 if (run_root / "reports" / f"{slug}.json").exists()
                 else "missing",
@@ -1048,6 +2142,7 @@ def review_start(
         "snapshot_sha256": snapshot["snapshot_sha256"],
         "staged_paths": sorted(_staged_paths(project_root, "review-start-invalid")),
         "acceptance_criteria": criteria,
+        "deterministic_scan": _scan_summary(run_id, record),
         "agents": agents,
         "next_action": (
             "finalize-review"
@@ -1122,38 +2217,18 @@ def _percent_basis_points(value: object) -> int:
     return int(scaled)
 
 
-def _hard_fail_state(
-    guard: dict[str, Any],
-    components: dict[str, Any],
-    observation: dict[str, object],
-    finding: dict[str, object],
-) -> str:
-    """``hard-fail`` for a verified authoritative detector binding, otherwise a blocking reason."""
-
-    agent_id = str(observation["agent_id"])
-    try:
-        guard["_validate_hard_fail_binding"](observation, finding, agent_id.removeprefix("agent:"))
-    except guard["GuardError"]:
-        return "AGG_DETECTOR_EVIDENCE_INVALID"
-    binding = cast(dict[str, object], finding["hard_fail_binding"])
-    authoritative, unresolved = components["hard_fail_detectors"][agent_id]
-    if binding.get("detector_id") in authoritative:
-        return "hard-fail"
-    if binding.get("detector_id") in unresolved:
-        return "AGG_AUTHORITATIVE_CONFLICT"
-    return "AGG_DETECTOR_EVIDENCE_INVALID"
-
-
 def _policy_outcome(
-    guard: dict[str, Any],
     components: dict[str, Any],
     observations: list[dict[str, object]],
+    code_findings: list[dict[str, Any]],
 ) -> tuple[dict[str, object], list[int]]:
     """Apply the versioned aggregation policy to the twelve reports; return outcome and scores.
 
     Specialists classify their findings; this code maps severities to the policy's score bands,
     takes each Agent's maximum, applies the weights and thresholds and resolves precedence
-    ``BLOCKED_INCOMPLETE > HARD-FAIL > FAIL > PASS``.
+    ``BLOCKED_INCOMPLETE > HARD-FAIL > FAIL > PASS``.  The rule-based scan's code findings enter
+    their Agent's score the same way; only they can yield ``HARD-FAIL``, and one of an unresolved
+    or conflicting detector blocks instead.
     """
 
     policy = components["aggregation_policy"]
@@ -1184,17 +2259,27 @@ def _policy_outcome(
                 blocking.add("AGG_LOW_CONFIDENCE")
             if str(finding.get("source", "")).startswith("source-conflict:"):
                 blocking.add("AGG_AUTHORITATIVE_CONFLICT")
-            if finding.get("hard_fail_binding") is not None:
-                state = _hard_fail_state(guard, components, observation, finding)
-                if state == "hard-fail":
-                    hard_fail = True
-                else:
-                    blocking.add(state)
             if (
                 agent_id in SECURITY_CRITICAL_VETO_AGENTS
                 and severity == "critical"
                 and cast(float, confidence) >= floor
             ):
+                vetoed = True
+        for code_finding in code_findings:
+            if code_finding.get("agent_id") != agent_id:
+                continue
+            severity = str(code_finding.get("severity"))
+            if severity not in scores:
+                raise GovernanceClientError("review-artifact-invalid")
+            maximum = max(maximum, int(scores[severity]))
+            effect = code_finding.get("decision_effect")
+            if effect == "hard-fail":
+                hard_fail = True
+            elif effect == "blocked-incomplete":
+                blocking.add("AGG_AUTHORITATIVE_CONFLICT")
+            else:
+                raise GovernanceClientError("review-artifact-invalid")
+            if agent_id in SECURITY_CRITICAL_VETO_AGENTS and severity == "critical":
                 vetoed = True
         agent_scores.append(maximum)
         weight = _weight_micros(policy["weights"].get(agent_id))
@@ -1335,8 +2420,13 @@ def _decision_evidence(
     second_outcome: dict[str, object],
     started_at: str,
     decided_at: str,
+    scan_evidence: dict[str, object],
 ) -> dict[str, object]:
-    """The single versioned evidence object; every digest is recomputed from its sources."""
+    """The single versioned evidence object; every digest is recomputed from its sources.
+
+    ``scan_evidence`` binds the rule-based scan record, its code findings and every dismissed
+    candidate with its specialist's reason.
+    """
 
     harness = components["mandatory_governed_execution"]
     evaluator = components["agentic_evaluator"]
@@ -1483,6 +2573,7 @@ def _decision_evidence(
         "canonicalization": "kt-agentic-decision-evidence-json-v1",
         "evidence_sha256": "",
         "audit_replay": audit_replay,
+        "deterministic_scan": scan_evidence,
         "model_rerun": _model_rerun(cast(dict[str, object], context["model"])),
         "data_handling": {**_data_handling(), "credential_stored": False},
     }
@@ -1610,13 +2701,22 @@ def _receipt(
     return receipt
 
 
-def _finding_summaries(observations: list[dict[str, object]]) -> list[dict[str, object]]:
-    """Report references for the Agent's answer to the user; no raw source or prompt."""
+def _finding_summaries(
+    observations: list[dict[str, object]], catalog: dict[str, dict[str, str]]
+) -> list[dict[str, object]]:
+    """Report references for the Agent's answer to the user; no raw source or prompt.
+
+    A specialist finding's reason is its redacted evidence summary and its basis is the
+    institutional policy binding code wrote into `controls`; it has no ISO/KVKK basis of its own.
+    """
 
     summaries: list[dict[str, object]] = []
     for observation in observations:
         for finding in cast(list[dict[str, object]], observation.get("findings", [])):
             locations = cast(list[dict[str, object]], finding.get("locations", []))
+            controls = cast(list[dict[str, object]], finding.get("controls", []))
+            if any(item.get("standard_id") != INSTITUTIONAL_STANDARD for item in controls):
+                raise _basis_failure()
             summaries.append(
                 {
                     "agent_id": observation["agent_id"],
@@ -1628,6 +2728,14 @@ def _finding_summaries(observations: list[dict[str, object]]) -> list[dict[str, 
                         f"{location.get('path')}:{location.get('start_line')}"
                         for location in locations[:3]
                     ],
+                    "reason_line": reason_line(str(finding.get("evidence_summary")), catalog),
+                    "basis_lines": basis_lines(
+                        [
+                            {**item, "mapping_status": "institutional-policy-binding"}
+                            for item in controls
+                        ],
+                        catalog,
+                    ),
                 }
             )
     return summaries
@@ -1653,6 +2761,157 @@ def _run_inputs(
     return cast(dict[str, Any], context), snapshot, bindings
 
 
+def _verified_scan_record(
+    project_root: Path,
+    run_root: Path,
+    guard: dict[str, Any],
+    context: dict[str, Any],
+    schemas: dict[str, Any],
+) -> tuple[bytes, dict[str, Any]]:
+    """The run's scan record after the scan is run again on the staged tree and matches it."""
+
+    raw, record = _read_review_json(run_root / f"{SCAN_RECORD_NAME}.json")
+    try:
+        guard["_validate_against_schema"](record, guard["SCAN_RECORD_SCHEMA"], schemas)
+    except guard["GuardError"]:
+        raise GovernanceClientError(
+            "review-run-invalid", reason_code="DETERMINISTIC_SCAN_INVALID"
+        ) from None
+    if (
+        record.get("project_id") != context["project_id"]
+        or record.get("run_id") != context["run_id"]
+        or record.get("snapshot_sha256") != context["snapshot_sha256"]
+    ):
+        raise GovernanceClientError("review-run-invalid", reason_code="DETERMINISTIC_SCAN_INVALID")
+    if record.get("status") != "complete":
+        raise GovernanceClientError(
+            "review-run-invalid", reason_code="DETERMINISTIC_SCAN_INCOMPLETE"
+        )
+    try:
+        body = deterministic_scan(project_root)
+    except GovernanceClientError as exc:
+        raise GovernanceClientError("review-run-invalid", reason_code=exc.reason_code) from None
+    if record != _scan_record(
+        str(context["project_id"]), str(context["run_id"]), str(context["snapshot_sha256"]), body
+    ):
+        raise GovernanceClientError("review-run-invalid", reason_code="DETERMINISTIC_SCAN_MISMATCH")
+    return raw, cast(dict[str, Any], record)
+
+
+def _scan_finding_summaries(
+    record: dict[str, Any],
+    code_findings: list[dict[str, Any]],
+    dismissed: list[dict[str, Any]],
+    basis: dict[str, dict[str, Any]],
+    catalog: dict[str, dict[str, str]],
+) -> dict[str, object]:
+    """The rule-based scan's findings and dismissals for the Agent's answer to the user.
+
+    Each code finding carries its detector's reason and basis lines from the packs this run read.
+    """
+
+    summaries = {item["candidate_id"]: item["summary"] for item in record["matches"]}
+    return {
+        "deterministic_findings": [
+            {
+                "agent_id": item["agent_id"],
+                "detector_id": item["detector_id"],
+                "severity": item["severity"],
+                "location": f"{item['path']}:{item['start_line']}",
+                "summary": summaries[item["candidate_id"]],
+                **detector_explanation(item["detector_id"], basis, catalog),
+            }
+            for item in code_findings
+        ],
+        "dismissed_candidates": [
+            {
+                "agent_id": item["agent_id"],
+                "detector_id": item["detector_id"],
+                "location": f"{item['path']}:{item['start_line']}",
+                "reason": item["reason"],
+            }
+            for item in dismissed
+        ],
+    }
+
+
+DECISION_EVENT_VERDICTS = frozenset({"HARD-FAIL", "FAIL"})
+MAX_DECISION_EVENT_FINDINGS = 64
+
+
+def _location_fields(location: dict[str, Any]) -> dict[str, object]:
+    return {field: location[field] for field in ("path", "start_line", "end_line")}
+
+
+def _record_decision_event(
+    project_id: str,
+    decision: dict[str, object],
+    decision_raw: bytes,
+    code_findings: list[dict[str, Any]],
+    observations: list[dict[str, object]],
+) -> None:
+    """Chain a HARD-FAIL or FAIL decision so the central notifier receives it.
+
+    The record names detectors, agents, finding identifiers and file locations only; no title,
+    rationale, source line or prompt.  A record that cannot be written never changes the decision.
+    """
+
+    if decision.get("decision") not in DECISION_EVENT_VERDICTS:
+        return
+    try:
+        run_id = str(decision["run_id"])
+        veto: list[dict[str, object]] = []
+        for observation in observations:
+            if observation.get("agent_id") not in SECURITY_CRITICAL_VETO_AGENTS:
+                continue
+            for finding in cast(list[dict[str, Any]], observation.get("findings", [])):
+                if finding.get("severity") != "critical":
+                    continue
+                veto.append(
+                    {
+                        "agent_id": observation["agent_id"],
+                        "finding_id": finding["finding_id"],
+                        "severity": "critical",
+                        "locations": [
+                            _location_fields(location) for location in finding["locations"][:3]
+                        ],
+                    }
+                )
+        body = {
+            "schema_version": "1.0",
+            "kind": "GovernedReviewDecisionEvent",
+            "run_id": run_id,
+            "project_id": project_id,
+            "snapshot_sha256": decision["snapshot_sha256"],
+            "decision": decision["decision"],
+            "reason_codes": decision["reason_codes"],
+            "decision_sha256": hashlib.sha256(decision_raw).hexdigest(),
+            "decided_at": decision["decided_at"],
+            "code_findings": [
+                {
+                    "agent_id": item["agent_id"],
+                    "detector_id": item["detector_id"],
+                    "severity": item["severity"],
+                    "decision_effect": item["decision_effect"],
+                    **_location_fields(item),
+                }
+                for item in code_findings[:MAX_DECISION_EVENT_FINDINGS]
+            ],
+            "security_veto_findings": veto[:MAX_DECISION_EVENT_FINDINGS],
+            "raw_content_recorded": False,
+        }
+        record_id = hashlib.sha256(f"review-decision\n{run_id}".encode()).hexdigest()[:32]
+        _hook_module("governance_records.py")["write_event"](
+            "review-decision",
+            project_id,
+            body,
+            record_id=record_id,
+            location=_record_location(),
+        )
+    except Exception:  # noqa: S110 -- the record never changes the review decision
+        return
+
+
 def finalize_review(run_id: str) -> dict[str, object]:
     """Decide a complete run and, for PASS, write its receipt, audit and publication; resumable.
 
@@ -1673,6 +2932,13 @@ def finalize_review(run_id: str) -> dict[str, object]:
         raise GovernanceClientError("review-run-invalid", reason_code=exc.code) from None
     if current["snapshot_sha256"] != context["snapshot_sha256"]:
         raise GovernanceClientError("review-run-invalid", reason_code="SNAPSHOT_CHANGED")
+    schemas = guard["_schema_registry"](project_root)
+    record_raw, record = _verified_scan_record(project_root, run_root, guard, context, schemas)
+    try:
+        basis = finding_basis(project_root)
+        catalog = finding_catalog(components["explanations"])
+    except GovernanceClientError as exc:
+        raise GovernanceClientError("review-run-invalid", reason_code=exc.reason_code) from None
     missing = [
         agent_id
         for agent_id in guard["AGENTS"]
@@ -1685,7 +2951,6 @@ def finalize_review(run_id: str) -> dict[str, object]:
             "missing_agents": missing,
             "next_action": "dispatch-specialists",
         }
-    schemas = guard["_schema_registry"](project_root)
     observations: list[dict[str, object]] = []
     results: list[dict[str, object]] = []
     for agent_id in guard["AGENTS"]:
@@ -1699,11 +2964,21 @@ def finalize_review(run_id: str) -> dict[str, object]:
             raise GovernanceClientError(
                 "review-run-invalid", reason_code="REPORT_SCHEMA_INVALID"
             ) from None
-        expected = _observation_bindings(context, components, agent_id)
+        candidates = guard["deterministic_candidates"](record, agent_id)
+        expected = _observation_bindings(context, components, agent_id, candidates)
         if any(observation.get(key) != value for key, value in expected.items()) or any(
             observation.get(key) != value for key, value in bindings[agent_id].items()
         ):
             raise GovernanceClientError("review-run-invalid", reason_code="REPORT_BINDING_MISMATCH")
+        if (
+            guard["candidate_response_problem"](
+                candidates, observation.get("candidate_responses"), observation.get("status")
+            )
+            is not None
+        ):
+            raise GovernanceClientError(
+                "review-run-invalid", reason_code="CANDIDATE_RESPONSES_INVALID"
+            )
         observations.append(observation)
         findings = cast(list[object], observation.get("findings", []))
         results.append(
@@ -1719,7 +2994,11 @@ def finalize_review(run_id: str) -> dict[str, object]:
                 "max_risk_score_basis_points": 0,
             }
         )
-    outcome, agent_scores = _policy_outcome(guard, components, observations)
+    try:
+        code_findings, dismissed = guard["deterministic_scan_findings"](record, observations)
+    except guard["GuardError"] as exc:
+        raise GovernanceClientError("review-run-invalid", reason_code=exc.code) from None
+    outcome, agent_scores = _policy_outcome(components, observations, code_findings)
     for index, score in enumerate(agent_scores):
         results[index]["max_risk_score_basis_points"] = score
     outcome = {**outcome, "rationale_summary": _rationale(components, outcome)}
@@ -1737,10 +3016,7 @@ def finalize_review(run_id: str) -> dict[str, object]:
     }
     try:
         recalculated = guard["recalculate_policy_outcome"](
-            receipt_like,
-            observations,
-            components["severity_scores"],
-            components["hard_fail_detectors"],
+            receipt_like, observations, components["severity_scores"], code_findings
         )
     except guard["GuardError"] as exc:
         raise GovernanceClientError("review-run-invalid", reason_code=exc.code) from None
@@ -1752,10 +3028,28 @@ def finalize_review(run_id: str) -> dict[str, object]:
         )
     if not decided_at:
         decided_at = _iso_utc(datetime.now(UTC))
+    scan_evidence = guard["deterministic_scan_evidence"](
+        run_id, hashlib.sha256(record_raw).hexdigest(), code_findings, dismissed
+    )
     evidence = _decision_evidence(
-        guard, context, components, results, outcome, second_outcome, started_at, decided_at
+        guard,
+        context,
+        components,
+        results,
+        outcome,
+        second_outcome,
+        started_at,
+        decided_at,
+        scan_evidence,
     )
     decision = _decision(context, components, evidence, observations)
+    try:
+        explained = {
+            "findings": _finding_summaries(observations, catalog),
+            **_scan_finding_summaries(record, code_findings, dismissed, basis, catalog),
+        }
+    except GovernanceClientError as exc:
+        raise GovernanceClientError("review-run-invalid", reason_code=exc.reason_code) from None
     try:
         guard["_validate_against_schema"](
             evidence, "agentic-governed-review-decision-evidence.schema.json", schemas
@@ -1766,6 +3060,7 @@ def finalize_review(run_id: str) -> dict[str, object]:
     except guard["GuardError"] as exc:
         raise GovernanceClientError("review-run-invalid", reason_code=exc.code) from None
     _, decision_raw, _ = _write_artifact(project_id, run_id, "decision", decision)
+    _record_decision_event(project_id, decision, decision_raw, code_findings, observations)
     summary: dict[str, object] = {
         "run_id": run_id,
         "acceptance_criteria": decision["acceptance_criteria"],
@@ -1774,7 +3069,7 @@ def finalize_review(run_id: str) -> dict[str, object]:
         "rationale_summary": decision["rationale_summary"],
         "weighted_risk_score_basis_points": decision["weighted_risk_score_basis_points"],
         "compliance_score_basis_points": decision["compliance_score_basis_points"],
-        "findings": _finding_summaries(observations),
+        **explained,
     }
     if decision["decision"] != "PASS":
         return {
@@ -2112,6 +3407,48 @@ def _record_location() -> Any:
     return None
 
 
+def _managed_preferences() -> Any:
+    """Jamf's managed preference file; ``None`` selects the fixed system path."""
+    return None
+
+
+DEVICE_GATED_OPERATIONS = frozenset({"review-start", "finalize-review", "restore"})
+
+
+def _local_override_gate(project_root: Path) -> None:
+    """Refuse a governed review on a managed device while a local client file bypasses governance.
+
+    Any other device only hears the warning on stderr; the review goes on.
+    """
+    records = _hook_module("governance_records.py")
+    findings = records["local_client_overrides"](project_root)
+    if not findings:
+        return
+    blocking = bool(records["managed_device"](_managed_preferences()))
+    message = str(records["local_override_message"](findings, blocking=blocking))
+    if blocking:
+        raise GovernanceClientError("local-client-override", guidance=message)
+    print(message, file=sys.stderr)
+
+
+def _device_refusal(operation: str) -> GovernanceClientError | None:
+    """Refuse a review or restore command on a stopped device, before any other check."""
+    try:
+        records = _hook_module("governance_records.py")
+        decision, _ = records["device_gate"](
+            location=_record_location(), managed_preferences=_managed_preferences()
+        )
+    except Exception:
+        return None
+    if decision not in {"stop", "unverified"}:
+        return None
+    records["record_refusal"](
+        "governance-client", decision, client=None, location=_record_location()
+    )
+    code = "device-stopped" if decision == "stop" else "device-state-unverified"
+    return GovernanceClientError(code, guidance=records["gate_message"](decision, marker=True))
+
+
 def _stored_prompt_metadata(record: dict[str, Any]) -> dict[str, object]:
     try:
         return cast(
@@ -2221,9 +3558,11 @@ def main(argv: list[str] | None = None) -> int:
     observation.add_argument("--run-id", required=True)
     observation.add_argument("--agent", required=True)
     commands.add_parser("consultation")
+    commands.add_parser("scan-worker")
     restore = commands.add_parser("restore")
     restore.add_argument("paths", nargs="+")
-    if argv is None:
+    # A scan worker runs under the interpreter of the scan that started it.
+    if argv is None and sys.argv[1:] != ["scan-worker"]:
         script = Path(__file__)
         if _hook_module("governance_records.py")["ensure_profile_interpreter"](
             Path.cwd(), script, sys.argv[1:]
@@ -2233,6 +3572,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         arguments = parser.parse_args(argv)
         exit_code = 0
+        if arguments.operation in DEVICE_GATED_OPERATIONS:
+            refusal = _device_refusal(arguments.operation)
+            if refusal is not None:
+                _utf8_output()
+                raise refusal
         if arguments.operation == "preflight":
             result = preflight()
             exit_code = 0 if result["ok"] is True else 1
@@ -2252,6 +3596,8 @@ def main(argv: list[str] | None = None) -> int:
             exit_code = 0 if result["status"] == "complete" else 1
         elif arguments.operation == "consultation":
             result = record_consultation(sys.stdin.buffer.read(MAX_REQUEST_BYTES + 1))
+        elif arguments.operation == "scan-worker":
+            result = scan_worker(sys.stdin.buffer.read())
         elif arguments.operation == "restore":
             _utf8_output()
             result = restore_managed_files(arguments.paths)

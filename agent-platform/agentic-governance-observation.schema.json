@@ -23,6 +23,8 @@
     "acceptance_criteria",
     "findings",
     "scanned_files",
+    "deterministic_candidates",
+    "candidate_responses",
     "error_code",
     "error_summary",
     "claim_boundary",
@@ -60,6 +62,19 @@
       "uniqueItems": true,
       "items": {"$ref": "#/$defs/repositoryRelativePath"}
     },
+    "deterministic_candidates": {
+      "description": "Kural tabanlı taramanın bu uzmana yanıtlatmak zorunda olduğu eşleşmeler; review-start yazar, uzman yazmaz.",
+      "type": "array",
+      "maxItems": 512,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/deterministicCandidate"}
+    },
+    "candidate_responses": {
+      "description": "Uzmanın her adaya tek yanıtı: confirmed (gerçek sorun) veya gerekçeli dismissed (gerçek sorun değil).",
+      "type": "array",
+      "maxItems": 512,
+      "items": {"$ref": "#/$defs/candidateResponse"}
+    },
     "error_code": {
       "type": ["string", "null"],
       "pattern": "^[A-Z][A-Z0-9_]{2,63}$"
@@ -93,6 +108,7 @@
       "else": {
         "properties": {
           "findings": {"maxItems": 0},
+          "candidate_responses": {"maxItems": 0},
           "error_code": {"type": "string"},
           "error_summary": {"type": "string"}
         }
@@ -255,8 +271,7 @@
         "source",
         "locations",
         "evidence_summary",
-        "confidence",
-        "hard_fail_binding"
+        "confidence"
       ],
       "properties": {
         "finding_id": {
@@ -290,69 +305,60 @@
           "maxLength": 500,
           "pattern": "^\\S(?:[^\\r\\n]*\\S)?$"
         },
-        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-        "hard_fail_binding": {
-          "oneOf": [
-            {"type": "null"},
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "authority",
-                "canonicalization",
-                "detector_id",
-                "detector_pack_sha256",
-                "policy_ref",
-                "policy_sha256",
-                "evidence_sha256"
-              ],
-              "properties": {
-                "authority": {
-                  "const": "canonical-detector-source-policy-and-evidence"
-                },
-                "canonicalization": {
-                  "const": "kt-agentic-hard-fail-evidence-json-v1"
-                },
-                "detector_id": {
-                  "type": "string",
-                  "pattern": "^detector:[a-z][a-z0-9]*(?:-[a-z0-9]+)*/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
-                },
-                "detector_pack_sha256": {"$ref": "#/$defs/sha256"},
-                "policy_ref": {
-                  "type": "string",
-                  "pattern": "^policy:[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
-                },
-                "policy_sha256": {"$ref": "#/$defs/sha256"},
-                "evidence_sha256": {"$ref": "#/$defs/sha256"}
-              }
-            }
-          ]
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "deterministicCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id",
+        "detector_id",
+        "severity",
+        "path",
+        "start_line",
+        "end_line",
+        "summary"
+      ],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/candidateId"},
+        "detector_id": {
+          "type": "string",
+          "pattern": "^detector:[a-z][a-z0-9]*(?:-[a-z0-9]+)*/[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+        },
+        "severity": {"enum": ["info", "low", "medium", "high", "critical"]},
+        "path": {"$ref": "#/$defs/repositoryRelativePath"},
+        "start_line": {"type": "integer", "minimum": 1},
+        "end_line": {"type": "integer", "minimum": 1},
+        "summary": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 800,
+          "pattern": "^\\S(?:[^\\r\\n]*\\S)?$"
+        }
+      }
+    },
+    "candidateResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_id", "decision", "reason"],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/candidateId"},
+        "decision": {"enum": ["confirmed", "dismissed"]},
+        "reason": {
+          "type": ["string", "null"],
+          "maxLength": 500,
+          "pattern": "^\\S(?:[^\\r\\n]*\\S)?$"
         }
       },
       "allOf": [
         {
-          "if": {
-            "properties": {"classification_basis": {"const": "agentic-semantic"}},
-            "required": ["classification_basis"]
-          },
-          "then": {"properties": {"hard_fail_binding": {"const": null}}}
-        },
-        {
-          "if": {
-            "properties": {"hard_fail_binding": {"type": "object"}},
-            "required": ["hard_fail_binding"]
-          },
-          "then": {
-            "properties": {
-              "classification_basis": {"const": "canonical-detector"},
-              "source": {
-                "pattern": "^detector:[a-z][a-z0-9]*(?:-[a-z0-9]+)*/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
-              }
-            }
-          }
+          "if": {"properties": {"decision": {"const": "dismissed"}}, "required": ["decision"]},
+          "then": {"properties": {"reason": {"type": "string", "minLength": 20}}}
         }
       ]
     },
+    "candidateId": {"type": "string", "pattern": "^candidate:[0-9a-f]{32}$"},
     "control": {
       "type": "object",
       "additionalProperties": false,

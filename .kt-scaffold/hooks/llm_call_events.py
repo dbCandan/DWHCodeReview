@@ -398,7 +398,7 @@ def event_from_prompt_receipt(receipt: object) -> dict[str, object] | None:
     outcome = receipt.get("outcome")
     if decision == "block" and outcome in ("matched", "input-invalid", "guard-error"):
         return None
-    if decision != "allow" or outcome != "clean":
+    if decision != "allow" or outcome not in ("clean", "record-masked"):
         raise _invalid()
     try:
         client_id = receipt["client_id"]

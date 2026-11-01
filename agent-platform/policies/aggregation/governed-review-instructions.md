@@ -27,15 +27,15 @@ tabanını geçen ve sınıflandırması kabul edilmiş `critical` bulgusu, ağ�
 bile `FAIL` ve `AGG_SECURITY_CRITICAL_VETO` üretir; bu veto `HARD-FAIL` önceliğini değiştirmez. Uyarı
 eşiğini `PASS` yanında `AGG_THRESHOLD_WARNING` danışma nedeni olarak koru.
 
-Bulgunun önem derecesini veya risk puanını model öz beyanı olarak kabul etme. Kanonik detektör bulgusu
-detektör paketindeki önem derecesiyle ve sürümlü sınıflandırma politikasındaki kanonik detektör puanıyla
-eşleşmelidir. Rapor içinde beyan edilen değerlendirici kimliği, sürümü, belirlenimci bayrağı veya özet
-puan otoritesi değildir. Faz 2 mekanik çekirdekte detektör dışı anlamsal bulgu ancak rapor, bulgu,
-kontrol ve karar politikası
-sürümüne dışarıdan bağlanan güvenilir bir değerlendirme yapıtı çözümlenip özeti yeniden doğrulanırsa
-puanlanabilir. Bu sürümde böyle kabul edilmiş bir çözücü/yapıt yoktur; anlamsal bulgu danışma verisi
-olarak kalır ve raporu `BLOCKED_INCOMPLETE` sonucuna yönlendirir. Önem derecesi ile politika bandı
-uyuşmayan raporu da aynı biçimde kapat. Kullanıcıya dönük önem derecesi etiketlerini `Bilgi`, `Düşük`,
+Yönetilen incelemede (Faz 1 `code-policy-application`) uzmanın anlamsal bulgusu, önem derecesinin
+`detector_score_basis_points` puanıyla ajan puanına ve güvenlik vetosuna girer. Kural tabanlı taramanın
+kod bulgusu da aynı bantla girer ve `HARD-FAIL` yalnız bu taramadan gelir. Faz 2 mekanik çekirdeğin
+kanonik `GovernanceAssessmentReport` girdisinde ise bulgunun risk puanı model öz beyanıdır ve kabul
+edilmez: kanonik detektör bulgusu detektör paketindeki önem derecesiyle ve sürümlü sınıflandırma
+politikasındaki kanonik detektör puanıyla eşleşmelidir; detektör kanıtı taşımayan bulgu puan otoritesi
+değildir ve raporu `BLOCKED_INCOMPLETE` sonucuna yönlendirir. Rapor içinde beyan edilen değerlendirici
+kimliği, sürümü, belirlenimci bayrağı veya özet puan otoritesi değildir. Önem derecesi ile politika
+bandı uyuşmayan raporu da aynı biçimde kapat. Kullanıcıya dönük önem derecesi etiketlerini `Bilgi`, `Düşük`,
 `Orta`, `Yüksek`, `Kritik` olarak göster.
 
 Bu talimat bir model ajan istemi veya istemci keşif yüzeyi değildir. Kararı model yargısıyla değiştirme,

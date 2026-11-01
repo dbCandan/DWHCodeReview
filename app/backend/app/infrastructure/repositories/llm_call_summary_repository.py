@@ -46,7 +46,7 @@ class LlmCallSummaryRepository:
         )
         await self.session.flush()
 
-    def _select(self, tenant_id: int) -> Select[tuple[LlmCallSummary, str]]:
+    def _select(self, tenant_id: int) -> Select[LlmCallSummary, str]:
         return (
             select(LlmCallSummary, ReviewRun.public_id)
             .outerjoin(ReviewRun, ReviewRun.review_run_id == LlmCallSummary.review_run_id)

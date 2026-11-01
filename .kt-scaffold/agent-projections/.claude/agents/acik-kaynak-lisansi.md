@@ -26,11 +26,12 @@ permissionMode: "plan"
 # Governed-review çıktı profili
 
 - Normal veya doğrudan ajan kullanımında kanonik çıktı sözleşmesi `GovernanceAssessmentReport` olarak kalır.
-- Yalnız açık bir `governed-review` uzman çağrısında tek JSON nesnesi olarak yalnız `agent_id`, `status`, `findings`, `scanned_files`, `error_code` ve `error_summary` anahtarlarını döndür; nesne dışında açıklama ekleme. Bu çağrıda kanonik talimatlardaki rapor şeması, çıktı biçimi ve ek bölüm istekleri uygulanmaz.
+- Yalnız açık bir `governed-review` uzman çağrısında tek JSON nesnesi olarak yalnız `agent_id`, `status`, `findings`, `scanned_files`, `error_code` ve `error_summary` anahtarlarını, bağlama dosyasında aday varsa `candidate_responses` anahtarını da döndür; nesne dışında açıklama ekleme. Bu çağrıda kanonik talimatlardaki rapor şeması, çıktı biçimi ve ek bölüm istekleri uygulanmaz.
 - Bu çağrıdaki `agent_id` değeri yalnız `agent:acik-kaynak-lisansi` olabilir. Korelasyon kimliklerini, bileşen bağlarını ve diğer rapor alanlarını döndürme veya kopyalama; kanonik istemci onları bağlama dosyasından ekler. Bulgular, `controls` alanı dışında, `agent-platform/agentic-governance-observation.schema.json` şemasındaki `finding` tanımına uyar.
 - Aday staged Git index'tir (`git diff --cached --name-only`). `scanned_files` yalnız bu adaydan gerçekten incelediğin yolları taşır; bağlam için okuduğun başka dosyaları ekleme.
-- Biçim örneği; açılı ayraçlı değerleri kendi incelemenle doldur, bulgu yoksa `findings` boş listedir: `{"agent_id": "agent:acik-kaynak-lisansi", "status": "ok", "findings": [{"finding_id": "<kısa-kimlik>", "title": "<bulgu başlığı>", "classification_basis": "agentic-semantic", "severity": "<info|low|medium|high|critical>", "source": "<kaynak>", "locations": [{"path": "<staged yol>", "start_line": 1, "end_line": 1}], "evidence_summary": "<kısa kanıt özeti>", "confidence": 0.8, "hard_fail_binding": null}], "scanned_files": ["<staged yol>"], "error_code": null, "error_summary": null}`. Bulguya `controls` alanı yazma; kanonik istemci bu ajanın politika kontrolünü her bulguya kendisi ekler. Talimatlarda geçen kaynak kural kimlikleri (`QUAL-001` gibi) bulgu alanı değildir.
-- Yazdığın metin alanlarının karakter sınırı vardır: `finding_id` en çok 120, `title` en çok 200, `source` en çok 200, `evidence_summary` en çok 500, `error_summary` en çok 300 karakter. `evidence_summary` ve `error_summary` tek satırdır; satır sonu içermez. Sınırı aşan yanıt reddedilir. Sade dil açıklaması da bu sınırlara sığmalıdır: terimi kısa bir ara sözle açıkla, uzun anlatım yerine kısa ve öz yaz.
+- Biçim örneği; açılı ayraçlı değerleri kendi incelemenle doldur, bulgu yoksa `findings` boş listedir: `{"agent_id": "agent:acik-kaynak-lisansi", "status": "ok", "findings": [{"finding_id": "<kısa-kimlik>", "title": "<bulgu başlığı>", "classification_basis": "agentic-semantic", "severity": "<info|low|medium|high|critical>", "source": "<kaynak>", "locations": [{"path": "<staged yol>", "start_line": 1, "end_line": 1}], "evidence_summary": "<kısa kanıt özeti>", "confidence": 0.8}], "scanned_files": ["<staged yol>"], "error_code": null, "error_summary": null}`. Bulguya `controls` alanı yazma; kanonik istemci bu ajanın politika kontrolünü her bulguya kendisi ekler. Talimatlarda geçen kaynak kural kimlikleri (`QUAL-001` gibi) bulgu alanı değildir.
+- Bağlama dosyasındaki `deterministic_candidates` listesi, kural tabanlı taramanın (kesin kuralları kodla denetleyen adım) bu ajana yanıtlattığı eşleşmelerdir. Liste boş değilse yanıta `candidate_responses` anahtarını ekle ve her adaya tek yanıt ver: `{"candidate_id": "<aday kimliği>", "decision": "confirmed", "reason": null}` eşleşme gerçek bir sorunsa; `dismissed` ve en az 20 karakterlik sade dil `reason` gerçek bir sorun değilse. Gerekçede eşleşen değeri yazma. Onaylanan aday kodla bulgu olur; bunun için ayrıca `findings` kaydı yazma. Kesin kuralların kararını kod verir; `HARD-FAIL` için bulguya alan ekleme.
+- Yazdığın metin alanlarının karakter sınırı vardır: `finding_id` en çok 120, `title` en çok 200, `source` en çok 200, `evidence_summary` en çok 500, `error_summary` en çok 300, `reason` en çok 500 karakter. `evidence_summary` ve `error_summary` ve `reason` tek satırdır; satır sonu içermez. Sınırı aşan yanıt reddedilir. Sade dil açıklaması da bu sınırlara sığmalıdır: terimi kısa bir ara sözle açıkla, uzun anlatım yerine kısa ve öz yaz.
 - Çağrı, repo dışındaki ortak yönetişim kökünde bu koşuma ait `inputs/acik-kaynak-lisansi.bindings.json` girdi dosyasının mutlak yolunu verirse yalnız bu dosyayı salt okunur aç; proje dışında olsa da bu dosya çağrının girdisidir. Ortak kökte başka dosya açma, listeleme veya yazma.
 - Değerlendirme üretilemiyorsa başka çıktı profiline geri dönme; çağrının verdiği hata profiline göre `failed` veya `invalid` bildir.
 
@@ -107,18 +108,35 @@ Listede bulunan paket de güvenlik açığı, bakım, lisans veya zararlı içer
   Vite 8 seçer; `frontend.rendering` istemci taraflı SPA'dır. `architecture.nextjs`
   ve `architecture.server_side_rendering` yasaklarını koru. Next.js'e geçiş önerme.
 - `react`, `react-dom`, `vite` tam sabitlemeleri ve manifest/kilit kimlik-sürüm eşliği
-  profil major serilerine uymalıdır. Mevcut sabitlemeler React/React DOM 19.2.8 ve
-  Vite 8.2.2 olarak kalır. Alias veya kilit girdisiyle Next.js eklenmesi uyum değildir.
+  profil major serilerine uymalıdır. Mevcut sabitlemeler React/React DOM 19.3.0 ve
+  Vite 8.2.4 olarak kalır. Alias veya kilit girdisiyle Next.js eklenmesi uyum değildir.
 - Profil/otorite özeti, çözüm kaydı veya aday bağı eksik/geçersizse `BLOCKED_INCOMPLETE`
   bildir. Yalnız eski Next.js-only metni nedeniyle uygun React/Vite yığınını reddetme.
   Bu çözüm paket bazlı lisans, bağımlılık kabulü veya güvenlik incelemesinin yerine geçmez;
   Streamlit istisnasını genişletmez ve diğer kaynak çelişkilerini çözmez.
 
+## JWT kütüphanesi için profil önceliği
+
+- `resolution:pyjwt-jwt-library` uyarınca JWT'yi (oturum jetonunu) imzalayan ve doğrulayan tek
+  kütüphane, aynı adayın `technology-profile.yml#security.jwt_library` alanındaki PyJWT'dir
+  (`pyjwt`); kimlik doğrulama biçimi `technology-profile.yml#security.authentication` alanından
+  alınır.
+- Tarihsel izin listesi `python-jose` paketini onaylı sayar; bu onayı uygulama. `python-jose`
+  bakımsız kaldı ve kritik güvenlik açığı düzeltilmedi. `python-jose` veya `jose` bağımlılığı
+  (`requirements*.in`, `requirements*.txt`, `pyproject.toml`) ile `from jose import ...` ya da
+  `import jose` içe aktarması profil ihlalidir. `detector:acik-kaynak-lisansi/jwt-library-profile`
+  bunu `LICENSE-102` altında yüksek önemli bulgu olarak işaretler; öneri PyJWT'ye
+  (`PyJWT[crypto]`) geçmektir.
+- PyJWT'nin sürümü, lisansı ve kabulü bu çözümle değil, aşağıdaki altılı ek kabul ve
+  `dependency-admission.json` ile değerlendirilir. Profil, çözüm kaydı veya aday bağı
+  eksik/geçersizse `BLOCKED_INCOMPLETE` bildir. Tarihsel izin listesi baytları değişmez; bu çözüm
+  başka paket veya teknoloji onayı çıkarmaz ve diğer kaynak çelişkilerini çözmez.
+
 ## Altı çalışma zamanı paketinin sürümlü ek kabulü
 
 - `seed-normalization.yml#package_acceptances` içindeki
   `package-acceptance:runtime-six-20260917`, proje sahibinin kabul ettiği kesin ek listedir:
-  `cffi==2.1.1 / MIT-0`, `pydantic-settings==2.15.0 / MIT`, `sqlalchemy==2.0.52 / MIT`,
+  `cffi==2.1.1 / MIT-0`, `pydantic-settings==2.15.0 / MIT`, `sqlalchemy==2.1.1 / MIT`,
   `asyncpg==0.31.0 / Apache-2.0`, `pyjwt==2.15.0 / MIT`, `pwdlib==0.3.1 / MIT`.
 - Paket adlarını Python normalizasyonuyla karşılaştır: büyük/küçük harf ve ardışık
   tire/nokta/alt çizgi farkları kimliği değiştirmez. Extras tek başına kabul doğurmaz; aşağıdaki kilit mirası kararı geçişli paket adı
@@ -141,13 +159,13 @@ Listede bulunan paket de güvenlik açığı, bakım, lisans veya zararlı içer
   geliştirme/test/derleme kullanımına izin veren kesin ek listedir:
   `pytest-asyncio==1.4.0 / Apache-2.0`,
   `pytest-cov==7.1.0 / MIT`,
-  `black==26.5.1 / MIT`,
+  `black==26.10.1 / MIT`,
   `isort==9.0.1 / MIT`,
   `mypy==2.3.1 / MIT`,
   `pip-tools==7.6.1 / BSD-3-Clause`,
   `pip==26.2.1 / MIT`,
-  `setuptools==84.0.0 / MIT`,
-  `ruff==0.16.6 / MIT`,
+  `setuptools==84.1.0 / MIT`,
+  `ruff==0.16.9 / MIT`,
 - Aynı adayın `requirements-dev.in` / `requirements-dev.txt` sabitlemesi, paket
   kimliği, lisans kanıtı ve kanonik karar/otorite bağı eşleşirse yalnız tarihsel
   `approved_packages` yokluğu bulgusunu kapat. Eksik veya farklı bağ

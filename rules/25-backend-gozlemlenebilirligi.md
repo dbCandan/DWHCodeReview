@@ -24,9 +24,11 @@ istisna metnini asla günlükleme.
 
 Sağlık ve canlılık yalnız süreç durumunu raporlar. Hazırlık zorunlu bağımlılıkları kontrol edebilir
 ancak bağlantı ayrıntısı sızdırmamalıdır. İsteğe bağlı kapalı yerel gözlemlenebilirlik ortamı;
-`OpenTelemetry Collector`, `Prometheus`, `Tempo`, `Loki` ve `Grafana`'dan oluşur. Bu bir altyapı
-alıcısı ve inceleme yüzeyidir; uygulama sinyalinin bulunduğunun kanıtı değildir. İlk kök Helm chart'ı
-gözlemlenebilirlik iş yükü içermez; Kubernetes dağıtımı ayrı kabul edilmiş proje PRD'si ister.
+toplayıcı `Grafana Alloy`, `Prometheus`, `Tempo`, `Loki` ve `Grafana`'dan oluşur. `Alloy` uygulamanın
+`OpenTelemetry` sinyalini yalnız iç ağda alır ve bu üç depoya aktarır; Grafana'ya kullanım raporu
+göndermez. Bu bir altyapı alıcısı ve inceleme yüzeyidir; uygulama sinyalinin bulunduğunun kanıtı
+değildir. İlk kök Helm chart'ı gözlemlenebilirlik iş yükü içermez; Kubernetes dağıtımı ayrı kabul
+edilmiş proje PRD'si ister.
 
 Yeteneğe özgü ölçüm ve iz; sinyal adını, niteliği, kardinalite sınırını, saklama beklentisini ve onu
 tüketen test veya gösterge panosu sorgusunu tanımlayan kabul edilmiş `PRD` gerektirir. Kiracı, kullanıcı,

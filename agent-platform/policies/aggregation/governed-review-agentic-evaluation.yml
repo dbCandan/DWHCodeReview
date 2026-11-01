@@ -13,7 +13,7 @@ metadata:
 aggregation_source:
   policy_ref: policy:governed-review-aggregation
   policy_version: 1.5.0
-  policy_sha256: 7e17ae795f050b4345b3b4074b3a6dab0626d612a37bdf2ccebe8987482f4ccb
+  policy_sha256: f498c7bf68b798fc5443e7a2a0949f3473b2478f6201f1c5107309020e8746b9
   path: policies/aggregation/governed-review.yml
   required_fields:
     - required_agents
@@ -79,22 +79,18 @@ evaluation:
       - locations
       - evidence_summary
       - confidence
-      - hard_fail_binding
     on_missing_or_ambiguous: BLOCKED_INCOMPLETE
+  # HARD-FAIL yalnız kural tabanlı taramadan gelir: kesin gruptaki eşleşme ya da uzmanın
+  # onayladığı zorunlu aday. Reddedilen aday gerekçesiyle karar kanıtına yazılır, puana girmez.
   hard_fail:
     authority_source: hard_fail_authority-and-hard_fail_non_override
-    binding_required: canonical-detector-policy-and-evidence
-    evidence_canonicalization: kt-agentic-hard-fail-evidence-json-v1
-    evidence_fields:
-      - snapshot_sha256
-      - agent_id
-      - finding_id
-      - detector_id
-      - controls
-      - locations
-      - detector_pack_sha256
-      - policy_sha256
-    evidence_encoding: sorted-minified-utf8-single-lf
+    source: executor:governance-client/deterministic-scan
+    scan_record: reports/deterministic-scan.json
+    paths:
+      - blocking-code-finding
+      - confirmed-adjudication-candidate
+    unresolved_or_conflicting_detector_result: BLOCKED_INCOMPLETE
+    dismissed_candidate_effect: recorded-not-scored
     free_llm_severity_authoritative: false
 
 evidence_bound_replay:

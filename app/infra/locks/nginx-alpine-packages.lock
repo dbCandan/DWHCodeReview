@@ -1,4 +1,6 @@
 # Security fixes the admitted nginx base (Alpine 3.24) does not carry yet.
 # docker-arch alpine-arch package=version sha256
 amd64 x86_64 pcre2=10.49-r0 2919897914820f42a17a8d7d37df310d2dfad1c82ebe5f539cc5c765f916752a
+amd64 x86_64 zlib=1.3.2-r1 63aeea03c15a2f9018f81805cfc8aa926bdf5cd68921f22149c2fbb5d0ee9f47
 arm64 aarch64 pcre2=10.49-r0 03efd0b29f7f38deb10a9ccb54f56e19683eb7ac27eb1f347e6dbd2e59ea000d
+arm64 aarch64 zlib=1.3.2-r1 1f77a542ac6634761b9fe38d8bdca19b154071dcfa25432e73f2bc8a0740a33f

@@ -12,6 +12,7 @@
     "canonicalization",
     "evidence_sha256",
     "audit_replay",
+    "deterministic_scan",
     "model_rerun",
     "data_handling"
   ],
@@ -22,11 +23,91 @@
     "canonicalization": {"const": "kt-agentic-decision-evidence-json-v1"},
     "evidence_sha256": {"$ref": "#/$defs/sha256"},
     "audit_replay": {"$ref": "#/$defs/auditReplay"},
+    "deterministic_scan": {"$ref": "#/$defs/deterministicScan"},
     "model_rerun": {"$ref": "#/$defs/modelRerun"},
     "data_handling": {"$ref": "#/$defs/dataHandling"}
   },
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "deterministicScan": {
+      "description": "Koşumun kural tabanlı tarama kaydına bağ: kod bulguları (kesin gruptaki eşleşmeler ve uzmanın onayladığı adaylar) ile uzmanın gerekçesiyle reddettiği adaylar. Reddedilen aday karara girmez.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_path",
+        "record_sha256",
+        "executor_ref",
+        "code_findings",
+        "dismissed_candidates"
+      ],
+      "properties": {
+        "record_path": {
+          "type": "string",
+          "pattern": "^governed-review/run-[A-Za-z0-9][A-Za-z0-9._-]*/reports/deterministic-scan\\.json$"
+        },
+        "record_sha256": {"$ref": "#/$defs/sha256"},
+        "executor_ref": {"const": "executor:governance-client/deterministic-scan"},
+        "code_findings": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/scanLocation",
+            "properties": {
+              "decision_effect": {"enum": ["hard-fail", "blocked-incomplete"]}
+            },
+            "required": ["decision_effect"],
+            "not": {"required": ["reason"]}
+          }
+        },
+        "dismissed_candidates": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/scanLocation",
+            "properties": {
+              "scan_group": {"const": "adjudication"},
+              "reason": {
+                "type": "string",
+                "minLength": 20,
+                "maxLength": 500,
+                "pattern": "^\\S(?:[^\\r\\n]*\\S)?$"
+              }
+            },
+            "required": ["reason"],
+            "not": {"required": ["decision_effect"]}
+          }
+        }
+      }
+    },
+    "scanLocation": {
+      "type": "object",
+      "required": [
+        "candidate_id",
+        "agent_id",
+        "detector_id",
+        "scan_group",
+        "severity",
+        "path",
+        "start_line",
+        "end_line"
+      ],
+      "properties": {
+        "candidate_id": {"type": "string", "pattern": "^candidate:[0-9a-f]{32}$"},
+        "agent_id": {"type": "string", "pattern": "^agent:[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"},
+        "detector_id": {
+          "type": "string",
+          "pattern": "^detector:[a-z][a-z0-9]*(?:-[a-z0-9]+)*/[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+        },
+        "scan_group": {"enum": ["blocking", "adjudication"]},
+        "severity": {"enum": ["info", "low", "medium", "high", "critical"]},
+        "path": {"$ref": "#/$defs/repositoryRelativePath"},
+        "start_line": {"type": "integer", "minimum": 1},
+        "end_line": {"type": "integer", "minimum": 1},
+        "decision_effect": {"enum": ["hard-fail", "blocked-incomplete"]},
+        "reason": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
     "correlationId": {
       "type": "string",
       "minLength": 8,

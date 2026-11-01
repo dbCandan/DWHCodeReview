@@ -13,7 +13,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with: {persist-credentials: false}
-      - run: scripts/render-clients.sh --check
+      - name: Check governance drift and committed assistant overrides
+        run: scripts/render-clients.sh --check --ci
       - name: Validate local commit guard structure
         run: python3 .kt-scaffold/hooks/commit_governance_guard.py --self-check
       - name: Bind CI evidence to the checked-out tree

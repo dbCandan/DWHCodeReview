@@ -23,7 +23,8 @@
         "1.2",
         "1.3",
         "1.4",
-        "1.5"
+        "1.5",
+        "1.6"
       ]
     },
     "kind": {
@@ -121,10 +122,20 @@
       ],
       "properties": {
         "mode": {
-          "const": "specification-only"
+          "enum": [
+            "specification-only",
+            "governed-review-scan"
+          ]
         },
         "executor_ref": {
-          "type": "null"
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "const": "executor:governance-client/deterministic-scan"
+            }
+          ]
         },
         "implementation_status": {
           "enum": [
@@ -145,7 +156,35 @@
             "not-applicable"
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "governed-review-scan"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "executor_ref": {
+                "const": "executor:governance-client/deterministic-scan"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "executor_ref": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
     },
     "detectors": {
       "type": "array",
@@ -292,9 +331,41 @@
               }
             },
             "else": {
-              "properties": {
-                "schema_version": {
-                  "const": "1.1"
+              "if": {
+                "properties": {
+                  "detectors": {
+                    "contains": {
+                      "properties": {
+                        "implementation": {
+                          "properties": {
+                            "resolution_ref": {
+                              "const": "resolution:pyjwt-jwt-library"
+                            }
+                          },
+                          "required": [
+                            "resolution_ref"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "implementation"
+                      ]
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "schema_version": {
+                    "const": "1.6"
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "schema_version": {
+                    "const": "1.1"
+                  }
                 }
               }
             }
@@ -341,30 +412,7 @@
       "pattern": "^detector:[a-z][a-z0-9]*(?:[./-][a-z0-9]+)*$"
     },
     "standardRef": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "standard_id",
-        "control_id",
-        "version",
-        "mapping_status"
-      ],
-      "properties": {
-        "standard_id": {
-          "type": "string",
-          "pattern": "^[A-Z0-9][A-Z0-9._/-]{1,63}$"
-        },
-        "control_id": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,95}$"
-        },
-        "version": {
-          "type": "null"
-        },
-        "mapping_status": {
-          "const": "source-stated-unverified"
-        }
-      }
+      "$ref": "urn:kt:agent-platform:standard-reference:1.0"
     },
     "regexImplementation": {
       "type": "object",
@@ -399,6 +447,13 @@
               "DOTALL"
             ]
           }
+        },
+        "validator": {
+          "enum": [
+            "tckn-checksum",
+            "iban-mod97",
+            "luhn-checksum"
+          ]
         }
       }
     },
@@ -543,6 +598,20 @@
             "critical"
           ]
         },
+        "reason": {
+          "description": "Bulgunun nedenini sade Türkçe söyleyen tek satır. Değişmez kaynak kopyasındaki `message` satırından türetilir; değer, örnek veri ya da ISO metninden alıntı içermez. Kesin ya da zorunlu aday grubundaki her detektörde zorunludur.",
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 300,
+          "pattern": "^(?!.*[\\r\\n`])\\S(?:.*\\S)?$"
+        },
+        "scan_group": {
+          "description": "Yönetilen incelemedeki kural tabanlı taramanın grubu. Yalnız kesin başarısızlık veya çözülmemiş listesindeki `regex`/`python-re` detektörü taşır: `blocking` eşleşmesi doğrudan bulgu olur, `adjudication` eşleşmesi uzmanın yanıtlaması zorunlu adaydır.",
+          "enum": [
+            "blocking",
+            "adjudication"
+          ]
+        },
         "evidence_kind": {
           "enum": [
             "deterministic-check",
@@ -576,6 +645,9 @@
             },
             {
               "$ref": "#/$defs/sec009LoopbackRegexImplementation"
+            },
+            {
+              "$ref": "#/$defs/jwtLibraryProfileRegexImplementation"
             }
           ]
         },
@@ -670,6 +742,69 @@
                 }
               }
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "detector:acik-kaynak-lisansi/jwt-library-profile"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "implementation": {
+                "$ref": "#/$defs/jwtLibraryProfileRegexImplementation"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "implementation": {
+                "not": {
+                  "properties": {
+                    "resolution_ref": {
+                      "const": "resolution:pyjwt-jwt-library"
+                    }
+                  },
+                  "required": [
+                    "resolution_ref"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "scan_group"
+            ]
+          },
+          "then": {
+            "properties": {
+              "implementation": {
+                "properties": {
+                  "kind": {
+                    "const": "regex"
+                  },
+                  "engine": {
+                    "const": "python-re"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "engine"
+                ]
+              }
+            },
+            "required": [
+              "reason"
+            ]
           }
         }
       ]
@@ -892,6 +1027,61 @@
             "127.0.0.0/8",
             "::1",
             "localhost"
+          ]
+        },
+        "missing_or_invalid_input": {
+          "const": "BLOCKED_INCOMPLETE"
+        }
+      }
+    },
+    "jwtLibraryProfileRegexImplementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "engine",
+        "pattern",
+        "flags",
+        "resolution_ref",
+        "profile_ref",
+        "required_package",
+        "rejected_packages",
+        "rejected_imports",
+        "missing_or_invalid_input"
+      ],
+      "properties": {
+        "kind": {
+          "const": "regex"
+        },
+        "engine": {
+          "const": "python-re"
+        },
+        "pattern": {
+          "const": "^\\s*[\"']?(?i:python[-_.]jose)(?:\\[[^\\]\\n]*\\])?\\s*(?:[<>=!~;@,\"']|$)|^\\s*jose(?:\\[[^\\]\\n]*\\])?\\s*(?:[<>=!~;@]|$)|^\\s*(?:from\\s+jose(?:\\.\\w+)*\\s+import\\b|import\\s+jose\\b)"
+        },
+        "flags": {
+          "const": [
+            "MULTILINE"
+          ]
+        },
+        "resolution_ref": {
+          "const": "resolution:pyjwt-jwt-library"
+        },
+        "profile_ref": {
+          "const": "technology-profile.yml#security.jwt_library"
+        },
+        "required_package": {
+          "const": "pyjwt"
+        },
+        "rejected_packages": {
+          "const": [
+            "python-jose",
+            "jose"
+          ]
+        },
+        "rejected_imports": {
+          "const": [
+            "jose"
           ]
         },
         "missing_or_invalid_input": {

@@ -496,7 +496,8 @@ class ScheduledReviewScheduler:
         # A finding counts under every group of its rule; an ungrouped rule counts under None.
         counts: dict[tuple[str | None, Severity], int] = {}
         for names, severity, count in rows:
-            for group in names or [None]:
+            rule_groups: Sequence[str | None] = names or [None]
+            for group in rule_groups:
                 key = (group, Severity(severity))
                 counts[key] = counts.get(key, 0) + int(count)
         return (

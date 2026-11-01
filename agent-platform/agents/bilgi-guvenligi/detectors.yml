@@ -2,7 +2,7 @@ schema_version: "1.4"
 kind: DeterministicDetectorPack
 metadata:
   id: detector-pack:bilgi-guvenligi
-  version: 1.3.0
+  version: 1.4.0
   owner: team:information-security
   lifecycle: draft
 agent_ref: agent:bilgi-guvenligi
@@ -15,8 +15,8 @@ source_lineage:
   runtime_admission: not-admitted
   crosswalk_ref: governance-crosswalk:desktop-agents-v1
 execution_boundary:
-  mode: specification-only
-  executor_ref: null
+  mode: governed-review-scan
+  executor_ref: executor:governance-client/deterministic-scan
   implementation_status: partially-implemented
   projection_status: not-projectable
   runtime_admission: not-admitted
@@ -28,8 +28,18 @@ detectors:
     control_refs:
       - control:INFOSEC-102
     severity: critical
+    reason: "Kodda bir parola, gizli anahtar ya da erişim anahtarı doğrudan yazılmış olabilir. Sırlar koda gömülmez; kasadan (vault) ya da yapılandırmadan okunur."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.5.17
+        version: "2022"
+        mapping_status: baseline-unverified
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.28
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -46,8 +56,14 @@ detectors:
     control_refs:
       - control:INFOSEC-102
     severity: critical
+    reason: "Kodda AWS erişim anahtarı kimliğine benzeyen bir değer var. Bulut erişim anahtarları koda yazılmaz; kasadan ya da ortam değişkeninden okunur."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.5.17
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -64,8 +80,14 @@ detectors:
     control_refs:
       - control:INFOSEC-102
     severity: critical
+    reason: "Kodda özel anahtar (PEM) bloğu var. Özel anahtar depoya girerse onu ele geçiren kişi bu anahtarla kimlik doğrulayabilir ya da şifreli veriyi çözebilir."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.24
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -100,8 +122,17 @@ detectors:
     control_refs:
       - control:INFOSEC-102
     severity: high
+    reason: "Kodda sabit yazılmış bir e-posta adresi var; gerçek bir kişinin adresi olabilir. Kişisel veri kaynak koda gömülmez."
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.5.34
+        version: "2022"
+        mapping_status: baseline-unverified
+      - standard_id: KVKK-6698
+        control_id: "12/1"
+        version: "2024-06-01"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -136,8 +167,14 @@ detectors:
     control_refs:
       - control:INFOSEC-102
     severity: critical
+    reason: "Veritabanı bağlantı cümlesinin içine parola yazılmış. Kurum standardına göre parolalar yalnız kasadan ya da yapılandırmadan okunur."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.5.17
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -154,8 +191,18 @@ detectors:
     control_refs:
       - control:INFOSEC-102
     severity: critical
+    reason: "Parola, token ya da gizli anahtar taşıyan bir alan doğrudan log (kayıt) çağrısına veriliyor. Bu alanlar hiçbir zaman loglanmaz; önce temizleyiciden geçer."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.5.17
+        version: "2022"
+        mapping_status: baseline-unverified
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.15
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -172,6 +219,8 @@ detectors:
     control_refs:
       - control:INFOSEC-102
     severity: critical
+    reason: "Kodda sabit yazılmış bir IP adresi var. Ortama özel bir adres sızabilir; adres yapılandırmadan ya da DNS kaydından okunmalıdır."
+    scan_group: adjudication
     evidence_kind: deterministic-check
     standard_refs: []
     implementation:

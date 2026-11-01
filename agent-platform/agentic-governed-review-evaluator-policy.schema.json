@@ -47,7 +47,7 @@
         "policy_ref": {"const": "policy:governed-review-aggregation"},
         "policy_version": {"const": "1.5.0"},
         "policy_sha256": {
-          "const": "7e17ae795f050b4345b3b4074b3a6dab0626d612a37bdf2ccebe8987482f4ccb"
+          "const": "f498c7bf68b798fc5443e7a2a0949f3473b2478f6201f1c5107309020e8746b9"
         },
         "path": {"const": "policies/aggregation/governed-review.yml"},
         "required_fields": {
@@ -183,8 +183,7 @@
                 "source",
                 "locations",
                 "evidence_summary",
-                "confidence",
-                "hard_fail_binding"
+                "confidence"
               ]
             },
             "on_missing_or_ambiguous": {"const": "BLOCKED_INCOMPLETE"}
@@ -195,33 +194,22 @@
           "additionalProperties": false,
           "required": [
             "authority_source",
-            "binding_required",
-            "evidence_canonicalization",
-            "evidence_fields",
-            "evidence_encoding",
+            "source",
+            "scan_record",
+            "paths",
+            "unresolved_or_conflicting_detector_result",
+            "dismissed_candidate_effect",
             "free_llm_severity_authoritative"
           ],
           "properties": {
             "authority_source": {
               "const": "hard_fail_authority-and-hard_fail_non_override"
             },
-            "binding_required": {"const": "canonical-detector-policy-and-evidence"},
-            "evidence_canonicalization": {
-              "const": "kt-agentic-hard-fail-evidence-json-v1"
-            },
-            "evidence_fields": {
-              "const": [
-                "snapshot_sha256",
-                "agent_id",
-                "finding_id",
-                "detector_id",
-                "controls",
-                "locations",
-                "detector_pack_sha256",
-                "policy_sha256"
-              ]
-            },
-            "evidence_encoding": {"const": "sorted-minified-utf8-single-lf"},
+            "source": {"const": "executor:governance-client/deterministic-scan"},
+            "scan_record": {"const": "reports/deterministic-scan.json"},
+            "paths": {"const": ["blocking-code-finding", "confirmed-adjudication-candidate"]},
+            "unresolved_or_conflicting_detector_result": {"const": "BLOCKED_INCOMPLETE"},
+            "dismissed_candidate_effect": {"const": "recorded-not-scored"},
             "free_llm_severity_authoritative": {"const": false}
           }
         }

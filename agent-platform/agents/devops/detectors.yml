@@ -2,7 +2,7 @@ schema_version: "1.1"
 kind: DeterministicDetectorPack
 metadata:
   id: detector-pack:devops
-  version: 1.3.0
+  version: 1.4.0
   owner: team:platform-engineering
   lifecycle: draft
 agent_ref: agent:devops
@@ -15,8 +15,8 @@ source_lineage:
   runtime_admission: not-admitted
   crosswalk_ref: governance-crosswalk:desktop-agents-v1
 execution_boundary:
-  mode: specification-only
-  executor_ref: null
+  mode: governed-review-scan
+  executor_ref: executor:governance-client/deterministic-scan
   implementation_status: partially-implemented
   projection_status: not-projectable
   runtime_admission: not-admitted
@@ -68,8 +68,18 @@ detectors:
     control_refs:
       - control:DEVOPS-102
     severity: critical
+    reason: "CI/CD ya da kapsayıcı (container) yapılandırmasında parola ya da anahtar düz yazılmış. Sırlar yapılandırma dosyasına yazılmaz; gizli değişkenlerden okunur."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.5.17
+        version: "2022"
+        mapping_status: baseline-unverified
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.9
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -104,8 +114,14 @@ detectors:
     control_refs:
       - control:DEVOPS-102
     severity: critical
+    reason: "Çalışan uygulamanın veritabanı bağlantısında yönetici hesabı (sa, root, admin, dbo) kullanılıyor. Kurum standardı bu hesapların çalışma anında kullanılmasını yasaklar."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.8.2
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re

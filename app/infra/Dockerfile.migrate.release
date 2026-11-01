@@ -16,6 +16,8 @@ RUN addgroup -g "${APP_GID}" app \
     && adduser -D -H -u "${APP_UID}" -G app app
 
 WORKDIR /workspace/app/backend
+# pip leaves the image once the hash-locked requirements are installed: nothing installs packages at
+# run time, and the base image's pip carries its own vendored certifi, urllib3, msgpack and setuptools.
 COPY app/backend/requirements.txt /tmp/dependencies/requirements.txt
 RUN --mount=type=bind,from=python_wheelhouse,source=/,target=/opt/wheelhouse \
     --mount=type=secret,id=pip_conf,target=/etc/pip.conf,required=false \
@@ -27,6 +29,7 @@ RUN --mount=type=bind,from=python_wheelhouse,source=/,target=/opt/wheelhouse \
             -r /tmp/dependencies/requirements.txt ;; \
         *) echo "DEPENDENCY_MODE must be connected or offline" >&2; exit 64 ;; \
     esac; \
+    python -m pip uninstall --yes pip; \
     rm -rf /tmp/dependencies
 
 COPY --chown=${APP_UID}:${APP_GID} app/backend/app ./app

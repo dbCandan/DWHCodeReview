@@ -11,6 +11,7 @@ already-produced PASS receipt is bound to the exact staged snapshot and its loca
 from __future__ import annotations
 
 import argparse
+import contextlib
 import copy
 import hashlib
 import json
@@ -167,6 +168,7 @@ EVIDENCE_KEYS = {
     "canonicalization",
     "evidence_sha256",
     "audit_replay",
+    "deterministic_scan",
     "model_rerun",
     "data_handling",
 }
@@ -188,6 +190,8 @@ OBSERVATION_KEYS = {
     "acceptance_criteria",
     "findings",
     "scanned_files",
+    "deterministic_candidates",
+    "candidate_responses",
     "error_code",
     "error_summary",
     "claim_boundary",
@@ -269,6 +273,7 @@ AUTHORITY_MANAGED_ASSET_RELATIVE_PATHS = (
         for filename in ("agent.yml", "detectors.yml", "instructions.md", "policy.yml")
     ),
     "detector-pack.schema.json",
+    "standard-reference.schema.json",
     "seed-normalization.schema.json",
     "seed-normalization.yml",
     "agentic-agent-consultation.schema.json",
@@ -276,6 +281,7 @@ AUTHORITY_MANAGED_ASSET_RELATIVE_PATHS = (
     "agentic-governed-review-audit-event.schema.json",
     "agentic-governed-review-decision-evidence.schema.json",
     "agentic-governed-review-decision.schema.json",
+    "agentic-governed-review-deterministic-scan.schema.json",
     "agentic-governed-review-evaluator-policy.schema.json",
     "agentic-governed-review-receipt.schema.json",
     "llm-call-event.schema.json",
@@ -300,6 +306,9 @@ AUTHORITY_MANAGED_GENERATED_ARTIFACTS = (
     "generated/.kt-scaffold/hooks/llm_call_events.py",
     "generated/.kt-scaffold/hooks/llm_call_audit_hook.py",
     "generated/.kt-scaffold/hooks/initial_scaffold_commit.py",
+    "generated/.kt-scaffold/hooks/authority_sync.py",
+    "generated/.kt-scaffold/hooks/governance_forwarder.py",
+    "generated/.kt-scaffold/hooks/governance_identity.py",
 )
 SCHEMA_IDS = {
     "agentic-agent-consultation.schema.json": (
@@ -317,11 +326,15 @@ SCHEMA_IDS = {
     "agentic-governed-review-decision.schema.json": (
         "urn:kt:agent-platform:agentic-governed-review-decision:1.0"
     ),
+    "agentic-governed-review-deterministic-scan.schema.json": (
+        "urn:kt:agent-platform:agentic-governed-review-deterministic-scan:1.0"
+    ),
     "agentic-governed-review-receipt.schema.json": (
         "urn:kt:agent-platform:agentic-governed-review-receipt:1.0"
     ),
     "prompt-ingress-receipt.schema.json": "prompt-ingress-receipt.schema.json",
     "prompt-ingress-metadata.schema.json": "prompt-ingress-metadata.schema.json",
+    "standard-reference.schema.json": "urn:kt:agent-platform:standard-reference:1.0",
 }
 SCHEMA_DRAFT = "https://json-schema.org/draft/2020-12/schema"
 SUPPORTED_SCHEMA_KEYWORDS = {
@@ -1066,6 +1079,175 @@ def _has_dynamic_shell_syntax(command: str) -> bool:
     return escaped or quote is not None
 
 
+_SHELL_INTERPRETERS = frozenset(
+    {"sh", "bash", "zsh", "dash", "ksh", "ash", "mksh", "rbash", "busybox"}
+)
+_SHELL_EXECUTION_BUILTINS = frozenset({"eval", "source", "."})
+_PIPE_FORWARDERS = frozenset(
+    {"xargs", "nohup", "timeout", "stdbuf", "nice", "ionice", "env", "command", "sudo"}
+)
+
+
+def _shell_basename(value: str) -> str:
+    return value.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1].lower()
+
+
+def _shell_pipeline_segments(command: str) -> list:
+    """Split a command at top-level shell operators without executing or expanding it.
+
+    Returns ``(preceding_operator, segment_text)`` pairs; operators inside quotes or inside
+    a ``(...)``/``$(...)``/``<(...)`` group are not split points.
+    """
+    segments = []
+    current: list = []
+    operator = None
+    quote = None
+    escaped = False
+    depth = 0
+    index = 0
+    length = len(command)
+    while index < length:
+        character = command[index]
+        if escaped:
+            current.append(character)
+            escaped = False
+            index += 1
+            continue
+        if character == "\\" and quote != "'":
+            current.append(character)
+            escaped = True
+            index += 1
+            continue
+        if quote is not None:
+            current.append(character)
+            if character == quote:
+                quote = None
+            index += 1
+            continue
+        if character in ("'", '"'):
+            quote = character
+            current.append(character)
+            index += 1
+            continue
+        if character == "(":
+            depth += 1
+            current.append(character)
+            index += 1
+            continue
+        if character == ")":
+            if depth > 0:
+                depth -= 1
+            current.append(character)
+            index += 1
+            continue
+        if depth == 0:
+            if command[index : index + 2] in ("&&", "||"):
+                segments.append((operator, "".join(current)))
+                operator = command[index : index + 2]
+                current = []
+                index += 2
+                continue
+            if character in (";", "\n", "\r"):
+                segments.append((operator, "".join(current)))
+                operator = ";"
+                current = []
+                index += 1
+                continue
+            if character in ("|", "&"):
+                segments.append((operator, "".join(current)))
+                operator = character
+                current = []
+                index += 1
+                continue
+        current.append(character)
+        index += 1
+    segments.append((operator, "".join(current)))
+    return segments
+
+
+def _shell_segment_leading(segment: str):
+    try:
+        tokens = list(shlex.split(segment, posix=True))
+    except ValueError:
+        return None, ()
+    while tokens and SHELL_ASSIGNMENT_RE.match(tokens[0]) is not None:
+        tokens = tokens[1:]
+    if not tokens:
+        return None, ()
+    return _shell_basename(tokens[0]), tuple(_shell_basename(token) for token in tokens[1:])
+
+
+def _shell_active_substitution(text: str) -> bool:
+    quote = None
+    escaped = False
+    index = 0
+    length = len(text)
+    while index < length:
+        character = text[index]
+        if escaped:
+            escaped = False
+            index += 1
+            continue
+        if character == "\\" and quote != "'":
+            escaped = True
+            index += 1
+            continue
+        if quote == "'":
+            if character == "'":
+                quote = None
+            index += 1
+            continue
+        if quote == '"':
+            if character == '"':
+                quote = None
+                index += 1
+                continue
+            if character == "`" or text[index : index + 2] == "$(":
+                return True
+            index += 1
+            continue
+        if character in ("'", '"'):
+            quote = character
+            index += 1
+            continue
+        if character == "`" or text[index : index + 2] in ("$(", "<("):
+            return True
+        index += 1
+    return False
+
+
+def _decodes_into_shell(command: str) -> bool:
+    """Flag a pipeline that feeds decoded or obfuscated content into a shell interpreter.
+
+    ``echo <base64> | base64 -d | sh`` and ``sh -c "$(… | base64 -d)"`` hide the real
+    command from this classifier.  This hook never executes or expands the string, so a
+    shell interpreter fed by a pipe, command substitution or process substitution is an
+    unsafe commit shape.  A command that only decodes without executing the result is not
+    flagged.
+    """
+    try:
+        segments = _shell_pipeline_segments(command)
+    except Exception:
+        return True
+    for operator, segment in segments:
+        binary, arguments = _shell_segment_leading(segment)
+        if binary is None:
+            continue
+        if operator == "|" and binary in _SHELL_INTERPRETERS:
+            return True
+        if (
+            operator == "|"
+            and binary in _PIPE_FORWARDERS
+            and any(name in _SHELL_INTERPRETERS for name in arguments)
+        ):
+            return True
+        if (
+            binary in _SHELL_INTERPRETERS or binary in _SHELL_EXECUTION_BUILTINS
+        ) and _shell_active_substitution(segment):
+            return True
+    return False
+
+
 def _contains_direct_git_commit_segment(command: str) -> bool:
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>()")
@@ -1243,6 +1425,8 @@ def _classify_command(command: str | None) -> str:
 
     if command is None:
         return "outside"
+    if _decodes_into_shell(command):
+        return "unsafe"
     try:
         tokens = shlex.split(command, posix=True)
     except ValueError:
@@ -1705,6 +1889,9 @@ def _recomputed_governance_digest(
         ".kt-scaffold/hooks/llm_call_events.py",
         ".kt-scaffold/hooks/llm_call_audit_hook.py",
         ".kt-scaffold/hooks/initial_scaffold_commit.py",
+        ".kt-scaffold/hooks/authority_sync.py",
+        ".kt-scaffold/hooks/governance_forwarder.py",
+        ".kt-scaffold/hooks/governance_identity.py",
     )
     for index, virtual_relative in enumerate(AUTHORITY_MANAGED_GENERATED_ARTIFACTS):
         project_relative = generated_sources[index]
@@ -2198,36 +2385,207 @@ def _validate_evidence(
     return started, completed, second_completed
 
 
-def _validate_hard_fail_binding(
-    observation: dict[str, Any], finding: dict[str, Any], slug: str
-) -> None:
-    binding = finding.get("hard_fail_binding")
-    if binding is None:
-        return
-    _require(isinstance(binding, dict), "HARD_FAIL_BINDING_INVALID")
-    expected_policy_ref = f"policy:{slug}"
-    _require(
-        binding.get("detector_id") == finding.get("source")
-        and binding.get("detector_pack_sha256")
-        == observation["component_binding"]["detectors"]["sha256"]
-        and binding.get("policy_ref") == expected_policy_ref
-        and binding.get("policy_sha256") == observation["component_binding"]["policy"]["sha256"],
-        "HARD_FAIL_BINDING_INVALID",
-    )
-    evidence_payload = {
-        "snapshot_sha256": observation["snapshot_sha256"],
-        "agent_id": observation["agent_id"],
-        "finding_id": finding["finding_id"],
-        "detector_id": binding["detector_id"],
-        "controls": finding["controls"],
-        "locations": finding["locations"],
-        "detector_pack_sha256": binding["detector_pack_sha256"],
-        "policy_sha256": binding["policy_sha256"],
+SCAN_RECORD_NAME = "deterministic-scan"
+SCAN_RECORD_SCHEMA = "agentic-governed-review-deterministic-scan.schema.json"
+SCAN_RECORD_HEADER_KEYS = (
+    "schema_version",
+    "kind",
+    "canonicalization",
+    "project_id",
+    "run_id",
+    "snapshot_sha256",
+    "claim_boundary",
+    "data_handling",
+)
+CANDIDATE_FIELDS = (
+    "candidate_id",
+    "detector_id",
+    "severity",
+    "path",
+    "start_line",
+    "end_line",
+    "summary",
+)
+MIN_DISMISSAL_REASON_CHARACTERS = 20
+
+
+def deterministic_candidates(record: dict[str, Any], agent_id: str) -> list[dict[str, Any]]:
+    """The adjudication matches of one Agent, as its bindings input lists them."""
+
+    try:
+        return [
+            {field: match[field] for field in CANDIDATE_FIELDS}
+            for match in record["matches"]
+            if match["agent_id"] == agent_id and match["scan_group"] == "adjudication"
+        ]
+    except (KeyError, TypeError):
+        _deny("DETERMINISTIC_SCAN_INVALID")
+
+
+def candidate_response_problem(
+    candidates: object, responses: object, status: object
+) -> tuple[str, dict[str, object]] | None:
+    """The first way a specialist's responses fail to answer its candidates, or ``None``.
+
+    Every candidate of an ``ok`` report needs exactly one response; a dismissal carries a
+    reason. A malformed list is left to the observation schema, which names it.
+    """
+
+    if not isinstance(candidates, list) or not isinstance(responses, list):
+        return None
+    known = [item.get("candidate_id") for item in candidates if isinstance(item, dict)]
+    seen: set[object] = set()
+    for index, response in enumerate(responses):
+        if not isinstance(response, dict):
+            continue
+        identifier = response.get("candidate_id")
+        pointer = f"/candidate_responses/{index}"
+        if identifier not in known:
+            return "CANDIDATE_UNKNOWN", {
+                "pointer": f"{pointer}/candidate_id",
+                "keyword": "enum",
+                "constraint": known,
+            }
+        if identifier in seen:
+            return "CANDIDATE_RESPONSE_DUPLICATE", {
+                "pointer": f"{pointer}/candidate_id",
+                "keyword": "uniqueItems",
+                "constraint": identifier,
+            }
+        seen.add(identifier)
+        reason = response.get("reason")
+        if response.get("decision") == "dismissed" and (
+            not isinstance(reason, str) or len(reason.strip()) < MIN_DISMISSAL_REASON_CHARACTERS
+        ):
+            return "CANDIDATE_REASON_MISSING", {
+                "pointer": f"{pointer}/reason",
+                "keyword": "minLength",
+                "constraint": MIN_DISMISSAL_REASON_CHARACTERS,
+            }
+    missing = [identifier for identifier in known if identifier not in seen]
+    if status == "ok" and missing:
+        return "CANDIDATE_RESPONSE_MISSING", {
+            "pointer": "/candidate_responses",
+            "keyword": "required",
+            "constraint": missing,
+        }
+    return None
+
+
+def deterministic_scan_findings(
+    record: dict[str, Any], observations: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Code findings and dismissed candidates of a scan record and the specialists' responses.
+
+    A blocking-group match is a finding; an adjudication candidate becomes one only when its
+    specialist confirms it. A dismissed candidate keeps its reason and never enters the decision.
+    A candidate of a report that is not ``ok`` stays unanswered: that report already blocks.
+    """
+
+    try:
+        effects = {item["detector_id"]: item["decision_effect"] for item in record["detectors"]}
+        responses: dict[str, dict[str, dict[str, Any]]] = {}
+        statuses: dict[str, object] = {}
+        for observation in observations:
+            agent_id = observation["agent_id"]
+            statuses[agent_id] = observation.get("status")
+            responses[agent_id] = {
+                item["candidate_id"]: item
+                for item in observation.get("candidate_responses", [])
+                if isinstance(item, dict)
+            }
+        findings: list[dict[str, Any]] = []
+        dismissed: list[dict[str, Any]] = []
+        for match in record["matches"]:
+            location = {
+                field: match[field]
+                for field in (
+                    "candidate_id",
+                    "agent_id",
+                    "detector_id",
+                    "scan_group",
+                    "severity",
+                    "path",
+                    "start_line",
+                    "end_line",
+                )
+            }
+            if match["scan_group"] == "blocking":
+                findings.append({**location, "decision_effect": effects[match["detector_id"]]})
+                continue
+            response = responses.get(match["agent_id"], {}).get(match["candidate_id"])
+            if response is None:
+                _require(statuses.get(match["agent_id"]) != "ok", "CANDIDATE_RESPONSES_INVALID")
+            elif response.get("decision") == "confirmed":
+                findings.append({**location, "decision_effect": effects[match["detector_id"]]})
+            else:
+                dismissed.append({**location, "reason": response.get("reason")})
+    except (KeyError, TypeError, AttributeError):
+        _deny("DETERMINISTIC_SCAN_INVALID")
+    return findings, dismissed
+
+
+def deterministic_scan_evidence(
+    run_id: str,
+    record_sha256: str,
+    findings: list[dict[str, Any]],
+    dismissed: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """The decision evidence's binding to the scan record, its code findings and dismissals."""
+
+    return {
+        "record_path": f"{REVIEW_AREA}/{run_id}/reports/{SCAN_RECORD_NAME}.json",
+        "record_sha256": record_sha256,
+        "executor_ref": "executor:governance-client/deterministic-scan",
+        "code_findings": findings,
+        "dismissed_candidates": dismissed,
     }
+
+
+def _rescanned(root: Path, executable: str) -> dict[str, Any]:
+    """Run the governance client's scan again on the staged tree; the record is never trusted."""
+
+    path = Path(__file__).resolve().with_name("governance_client.py")
+    _require(path.is_file() and not path.is_symlink(), "DETERMINISTIC_SCAN_FAILED")
+    client = runpy.run_path(str(path))
+    try:
+        body = client["deterministic_scan"](root, executable)
+    except client["GovernanceClientError"] as error:
+        _deny(error.reason_code or "DETERMINISTIC_SCAN_FAILED")
+    except Exception:
+        _deny("DETERMINISTIC_SCAN_FAILED")
+    _require(isinstance(body, dict), "DETERMINISTIC_SCAN_FAILED")
+    return cast(dict[str, Any], body)
+
+
+def _validate_scan_record(
+    root: Path,
+    receipt: dict[str, Any],
+    snapshot: dict[str, Any],
+    schemas: dict[str, dict[str, Any]],
+    executable: str,
+) -> tuple[dict[str, Any], str]:
+    relative = f"{REVIEW_AREA}/{receipt['run_id']}/reports/{SCAN_RECORD_NAME}.json"
+    _, raw = _regular_file(root, relative, limit=MAX_JSON_BYTES)
+    record = _strict_json_loads(raw, "DETERMINISTIC_SCAN_INVALID")
     _require(
-        binding.get("evidence_sha256") == _canonical_sha256(evidence_payload),
-        "HARD_FAIL_EVIDENCE_DIGEST_MISMATCH",
+        isinstance(record, dict) and raw == _canonical_bytes(record), "DETERMINISTIC_SCAN_INVALID"
     )
+    _validate_against_schema(record, SCAN_RECORD_SCHEMA, schemas)
+    _require(
+        record.get("project_id") == receipt.get("project_id")
+        and record.get("run_id") == receipt.get("run_id")
+        and record.get("snapshot_sha256") == snapshot["snapshot_sha256"],
+        "DETERMINISTIC_SCAN_INVALID",
+    )
+    _require(record.get("status") == "complete", "DETERMINISTIC_SCAN_INCOMPLETE")
+    body = _rescanned(root, executable)
+    _require(
+        {key: value for key, value in record.items() if key not in SCAN_RECORD_HEADER_KEYS}
+        == body,
+        "DETERMINISTIC_SCAN_MISMATCH",
+    )
+    return record, _raw_sha256(raw)
 
 
 def _security_veto_clear(
@@ -2328,13 +2686,15 @@ def recalculate_policy_outcome(
     receipt: dict[str, Any],
     observations: list[dict[str, Any]],
     scores: dict[str, int],
-    hard_fail_detectors: dict[str, tuple[frozenset[str], frozenset[str]]],
+    code_findings: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Recompute the aggregation outcome of the twelve bound reports from the declared findings.
+    """Recompute the aggregation outcome of the twelve bound reports and the scan's code findings.
 
     The receipt's weights and thresholds are already bound to the aggregation policy file.  This
-    verifier derives each Agent's maximum score from its findings' severities and applies the
-    policy's precedence; it never changes, scores or interprets a finding.
+    verifier derives each Agent's maximum score from its findings' and code findings' severities
+    and applies the policy's precedence; it never changes, scores or interprets a finding.  Only a
+    code finding of a hard-fail detector yields ``HARD-FAIL``; one of an unresolved or conflicting
+    detector blocks.
     """
 
     policy = receipt["aggregation_policy"]
@@ -2349,6 +2709,16 @@ def recalculate_policy_outcome(
     total_weight = 0
     results = receipt["agent_results"]
     _require(len(observations) == len(results) == len(AGENTS), "POLICY_RECALCULATION_MISMATCH")
+    code_by_agent: dict[str, list[dict[str, Any]]] = {}
+    for code_finding in code_findings:
+        _require(
+            isinstance(code_finding, dict)
+            and code_finding.get("severity") in scores
+            and code_finding.get("decision_effect") in {"hard-fail", "blocked-incomplete"},
+            "POLICY_RECALCULATION_MISMATCH",
+        )
+        code_by_agent.setdefault(str(code_finding.get("agent_id")), []).append(code_finding)
+    _require(set(code_by_agent) <= set(AGENTS), "POLICY_RECALCULATION_MISMATCH")
     for index, result in enumerate(results):
         observation = observations[index]
         agent_id = result["agent_id"]
@@ -2376,27 +2746,19 @@ def recalculate_policy_outcome(
             source = finding.get("source")
             if isinstance(source, str) and source.startswith("source-conflict:"):
                 blocked.add("AGG_AUTHORITATIVE_CONFLICT")
-            if finding.get("hard_fail_binding") is not None:
-                try:
-                    _validate_hard_fail_binding(
-                        observation, finding, agent_id.removeprefix("agent:")
-                    )
-                except GuardError:
-                    blocked.add("AGG_DETECTOR_EVIDENCE_INVALID")
-                else:
-                    authoritative, unresolved = hard_fail_detectors[agent_id]
-                    detector = finding["hard_fail_binding"].get("detector_id")
-                    if detector in authoritative:
-                        hard_fail = True
-                    elif detector in unresolved:
-                        blocked.add("AGG_AUTHORITATIVE_CONFLICT")
-                    else:
-                        blocked.add("AGG_DETECTOR_EVIDENCE_INVALID")
             if (
                 agent_id in SECURITY_CRITICAL_VETO_AGENTS
                 and finding["severity"] == "critical"
                 and confidence >= floor
             ):
+                vetoed = True
+        for code_finding in code_by_agent.get(agent_id, []):
+            maximum = max(maximum, scores[code_finding["severity"]])
+            if code_finding["decision_effect"] == "hard-fail":
+                hard_fail = True
+            else:
+                blocked.add("AGG_AUTHORITATIVE_CONFLICT")
+            if agent_id in SECURITY_CRITICAL_VETO_AGENTS and code_finding["severity"] == "critical":
                 vetoed = True
         _require(
             result.get("max_risk_score_basis_points") == maximum, "POLICY_RECALCULATION_MISMATCH"
@@ -2478,8 +2840,6 @@ def _validate_reports(
             isinstance(findings, list) and len(findings) == result.get("finding_count"),
             "REPORT_FINDINGS_MISMATCH",
         )
-        for finding in findings:
-            _validate_hard_fail_binding(observation, finding, slug)
         if result["agent_id"] in SECURITY_CRITICAL_VETO_AGENTS:
             _require(_security_veto_clear(receipt, result, findings), "SECURITY_CRITICAL_VETO")
         _all_false(
@@ -2891,22 +3251,32 @@ def validate_review_run(
     started, primary_completed, second_completed = _validate_evidence(
         root, receipt, decision, schemas
     )
-    _, aggregation_raw = _regular_file(root, AGGREGATION_POLICY_PATH, limit=MAX_JSON_BYTES)
-    hard_fail_detectors = {
-        agent_id: detector_hard_fail_lists(
-            _regular_file(
-                root,
-                f"agent-platform/agents/{agent_id.removeprefix('agent:')}/detectors.yml",
-                limit=MAX_JSON_BYTES,
-            )[1]
+    # The scan runs again on the staged tree; the record, every report's candidate list and
+    # responses, and the decision evidence's code findings must all match it.
+    observations = [observation for _, observation in reports]
+    record, record_sha256 = _validate_scan_record(root, receipt, snapshot, schemas, executable)
+    for observation in observations:
+        candidates = observation.get("deterministic_candidates")
+        _require(
+            candidates == deterministic_candidates(record, observation["agent_id"]),
+            "CANDIDATE_BINDING_MISMATCH",
         )
-        for agent_id in AGENTS
-    }
+        _require(
+            candidate_response_problem(
+                candidates, observation.get("candidate_responses"), observation.get("status")
+            )
+            is None,
+            "CANDIDATE_RESPONSES_INVALID",
+        )
+    code_findings, dismissed = deterministic_scan_findings(record, observations)
+    _require(
+        receipt["decision_evidence"].get("deterministic_scan")
+        == deterministic_scan_evidence(receipt["run_id"], record_sha256, code_findings, dismissed),
+        "DECISION_EVIDENCE_SCAN_MISMATCH",
+    )
+    _, aggregation_raw = _regular_file(root, AGGREGATION_POLICY_PATH, limit=MAX_JSON_BYTES)
     recalculated = recalculate_policy_outcome(
-        receipt,
-        [observation for _, observation in reports],
-        severity_scores(aggregation_raw),
-        hard_fail_detectors,
+        receipt, observations, severity_scores(aggregation_raw), code_findings
     )
     primary = receipt["decision_evidence"]["audit_replay"]["primary_evaluation"]
     for field, value in recalculated.items():
@@ -2968,6 +3338,27 @@ def validate_review_run(
     )
 
 
+def _managed_preferences() -> Any:
+    """Jamf's managed preference file; ``None`` selects the fixed system path."""
+    return None
+
+
+def _device_refusal(hook: str, client: str) -> str | None:
+    """The fixed refusal when this device is stopped; read locally before any other check."""
+    path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "governance_records.py")
+    try:
+        records = runpy.run_path(path)
+        decision, _ = records["device_gate"](
+            location=_record_location(), managed_preferences=_managed_preferences()
+        )
+    except Exception:
+        return None
+    if decision not in {"stop", "unverified"}:
+        return None
+    records["record_refusal"](hook, decision, client=client, location=_record_location())
+    return str(records["gate_message"](decision, marker=True))
+
+
 def _allow_payload(client: str) -> dict[str, str]:
     return {"permission": "allow"} if client == "cursor" else {}
 
@@ -2993,6 +3384,12 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
+    refusal = _device_refusal("command", arguments.client)
+    if refusal is not None:
+        with contextlib.suppress(OSError):
+            sys.stdin.buffer.read(MAX_EVENT_BYTES + 1)
+        print(refusal, file=sys.stderr)
+        return 2
     try:
         event = _event()
         if arguments.client == "github-copilot-vscode":

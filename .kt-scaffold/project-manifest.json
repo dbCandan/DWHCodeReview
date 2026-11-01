@@ -75,14 +75,14 @@
       "artifact_id": "rule:04-politika-catismasi",
       "authority": "mandatory",
       "kind": "rule",
-      "sha256": "f73a4f8fdd7f37261ea25564412c8e03f5ea9eddbeacb20950388ab6fd18575c",
+      "sha256": "c6283cd4561820b1aa857cf3068f9eb8837b3e49d3e9637329a39a72e8a906ce",
       "version": "0.4.0"
     },
     {
       "artifact_id": "rule:13-tamamlanma-tanimi",
       "authority": "mandatory",
       "kind": "rule",
-      "sha256": "cb08a1727d936c5163b7bf38a23d30ef352c9c100333f08ddf13f28fcf22be4e",
+      "sha256": "be070f306a2a774465d5b0b17537817c04cabd95ab4a7306265a89f19099dc7e",
       "version": "0.4.0"
     },
     {
@@ -110,7 +110,7 @@
       "artifact_id": "rule:45-dagitim-hedefi",
       "authority": "mandatory",
       "kind": "rule",
-      "sha256": "b7cdc1f22c0b6b82baa5658d0401fa36ecef40a708ba3ecdd52142be8a2cd7f4",
+      "sha256": "d26768383e6a4de27fa272a049d75d53db96e89477c0e09acd3e8edeedee312e",
       "version": "0.4.0"
     },
     {
@@ -166,7 +166,7 @@
       "artifact_id": "rule:55-prompt-veri-guvenligi",
       "authority": "mandatory",
       "kind": "rule",
-      "sha256": "1cad4d0fec07207d5f5a7971fa157931297dbbf91aa3c75b62f7551781dbc07c",
+      "sha256": "992fb8250bb418c847638b7aedc1706a738eb104a0252c283f7c3033cda46b7f",
       "version": "0.4.0"
     },
     {
@@ -187,7 +187,7 @@
       "artifact_id": "rule:58-kimlik-dogrulama-ve-yetkilendirme",
       "authority": "mandatory",
       "kind": "rule",
-      "sha256": "3ba7ffe72c234d1465aaa05fd2c7ea32f92a35dc5e565051832de5245e7a0e84",
+      "sha256": "43005b57a9f589db6ca3f484f38410f7af8a289a758d7e927ac0ac15f4724e0a",
       "version": "0.4.0"
     },
     {
@@ -222,7 +222,7 @@
       "artifact_id": "rule:25-backend-gozlemlenebilirligi",
       "authority": "mandatory",
       "kind": "rule",
-      "sha256": "558eeb958f9c7f79274f09714df2c0e1f0c4da90f5a90361ccdc8fdebd1bea29",
+      "sha256": "eacbd534daa9184e9c849251a70d58a918d1362b2c7f260f85b62a9b76ac60ae",
       "version": "0.4.0"
     },
     {
@@ -247,6 +247,13 @@
       "version": "0.4.0"
     },
     {
+      "artifact_id": "rule:26-kurumsal-e-posta-gonderimi",
+      "authority": "mandatory",
+      "kind": "rule",
+      "sha256": "975854894925bb3a5ec29fa87cacfd20828af77a906f98bee345db11520b268b",
+      "version": "0.4.0"
+    },
+    {
       "artifact_id": "rule:44-sema-motoru-siniri",
       "authority": "recommended",
       "kind": "rule",
@@ -261,10 +268,24 @@
       "version": "0.4.0"
     },
     {
+      "artifact_id": "rule:27-exchange-takvim-esitlemesi",
+      "authority": "mandatory",
+      "kind": "rule",
+      "sha256": "ccbec67a80420c3961d1ce4122fd1971c44c7de445918ad08d19975e222d2370",
+      "version": "0.4.0"
+    },
+    {
       "artifact_id": "rule:46-vektor-gomme-siniri",
       "authority": "mandatory",
       "kind": "rule",
       "sha256": "a14f79d916fc6e036fc249f93922c4d0da0f0d73564671c2095fd5d94c4cc85e",
+      "version": "0.4.0"
+    },
+    {
+      "artifact_id": "rule:28-kurumsal-dizin-ldap",
+      "authority": "mandatory",
+      "kind": "rule",
+      "sha256": "577a08e2f2b115267e6da98914942bfdcca2c5c5f62adf484c171d25512b4983",
       "version": "0.4.0"
     },
     {
@@ -359,12 +380,12 @@
       "version": "0.4.0"
     }
   ],
-  "authority_generation": 51,
+  "authority_generation": 55,
   "backend_profile": "python-fastapi",
   "blueprint_id": "kt-vibecoding",
   "blueprint_version": "0.4.0",
   "format": 1,
-  "governance_digest": "da08d4bb98b1ac752009c5ae504ce49f1d6a825cdabec2a868b7ab5a9c9c1762",
+  "governance_digest": "9215da059ef9e310fe53685b8c631955ec603ae23ced0ce8316f0720cb899340",
   "governance_version": "0.4.0",
   "locales": [
     "tr"

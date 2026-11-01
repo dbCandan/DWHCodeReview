@@ -8,12 +8,14 @@ import bisect
 import contextlib
 import getpass
 import hashlib
+import hmac
 import json
 import math
 import re
 import runpy
 import secrets
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -72,8 +74,15 @@ BLOCK_CLASS_LABELS = {
     "iban": "IBAN",
     "payment-card": "kart numarasi",
     "phone-number": "telefon numarasi",
+    "customer-number": "musteri numarasi",
+    "labelled-personal-field": "kisisel bilgi alani (ad, adres veya dogum tarihi)",
+    "internal-hostname": "kurum ici sunucu adi",
+    "project-codename": "proje kod adi",
 }
 MAX_REPORTED_LINES = 5
+# Each matched detector's reason and basis lines come from the governance client's versioned
+# templates; when they cannot be read the block stands and this fixed line says so.
+EXPLANATION_UNAVAILABLE = "Neden ve dayanak satirlari okunamadi; engelleme karari degismedi."
 INPUT_INVALID_MESSAGE = (
     "Mesajiniz (prompt) gonderilmedi, cunku okunamadi: mesaj cok uzun (en fazla {limit_kb} KB, "
     "yani kabaca {limit_kb} bin harf) ya da bicimi gecersiz. Mesaji kisaltip yeniden gonderin; "
@@ -168,8 +177,75 @@ DETECTOR_CLASSES = frozenset(
         "iban",
         "payment-card",
         "phone-number",
+        "customer-number",
+        "labelled-personal-field",
+        "internal-hostname",
+        "project-codename",
     }
 )
+# What the prompt gets: `block` stops it, `record-mask` lets it through. Every match, whatever its
+# action, is masked in the record.
+DETECTOR_ACTIONS = ("block", "record-mask")
+REGEX_VALIDATORS = frozenset(
+    {
+        "secret-value-shape",
+        "private-key-pem-block",
+        "email-address-shape",
+        "tckn-checksum",
+        "iban-mod97",
+        "luhn-checksum",
+        "labelled-field-value",
+    }
+)
+EXPECTED_VALIDATORS = {
+    "labelled-secret": "secret-value-shape",
+    "private-key": "private-key-pem-block",
+    "email": "email-address-shape",
+    "tckn": "tckn-checksum",
+    "iban": "iban-mod97",
+    "payment-card": "luhn-checksum",
+    "labelled-personal-field": "labelled-field-value",
+}
+# A term-list class is matched against the keyed digests of a term list, never a pattern.
+TERM_LIST_CLASSES = {
+    "internal-hostname": "internal-hostnames",
+    "project-codename": "project-codenames",
+}
+TERM_LIST_NAMES = tuple(sorted(TERM_LIST_CLASSES.values()))
+TERM_NORMALIZATION = "nfkc-casefold-tr-v1"
+TERM_DIGEST = "hmac-sha256"
+MAX_TERM_PHRASE_WORDS = 3
+INSTITUTION_TERM_LIST_FILE = "institution-terms.json"
+EXPECTED_TERM_LIST_POLICY = {
+    "normalization": TERM_NORMALIZATION,
+    "digest": TERM_DIGEST,
+    "max_phrase_words": MAX_TERM_PHRASE_WORDS,
+    "institution_list": "shared-governance-root/" + INSTITUTION_TERM_LIST_FILE,
+}
+MAX_TERM_LIST_BYTES = 4 * 1024 * 1024
+MAX_TERM_LIST_ENTRIES = 50_000
+TERM_DIGEST_RE = re.compile(r"[0-9a-f]{64}")
+TERM_KEY_RE = re.compile(r"(?:[0-9a-f]{2}){32,64}")
+TERM_LIST_VERSION_RE = re.compile(r"[0-9A-Za-z][0-9A-Za-z._-]{0,63}")
+TERM_WORD_RE = re.compile(r"[^\W_]+(?:[-_][^\W_]+)*")
+TERM_PHRASE_GAP_RE = re.compile(r"[ \t]+")
+HOSTNAME_RE = re.compile(
+    r"(?<![\w.-])[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+(?![\w-])"
+)
+MAX_REPORTED_RECEIPT_LINES = 64
+# A labelled personal value is a finding unless it is a placeholder, a code reference, a type name
+# or an assignment; unquoted, it needs two words or a digit (a name, an address, a date).
+LABELLED_VALUE_WORDS_RE = re.compile(r"[^\W\d_]{2,}\s+[^\W\d_]{2,}")
+LABELLED_VALUE_ASSIGNMENT_RE = re.compile(r"[\w.\[\]]+\s*=")
+LABELLED_VALUE_DOTTED_RE = re.compile(r"[^\W\d]\w*(?:\.\w+)+")
+LABELLED_VALUE_TYPE_WORDS = frozenset(
+    {
+        "str", "string", "text", "varchar", "nvarchar", "char", "int", "integer", "number",
+        "bool", "boolean", "date", "datetime", "timestamp", "any", "object", "none", "null",
+        "nil", "optional", "list", "dict", "array", "uuid", "json", "field", "column",
+    }
+)  # fmt: skip
 WHOLE_PROMPT_REDACTION_CLASSES = frozenset({"labelled-secret", "private-key"})
 PROMPT_CAPTURE_KEYS = frozenset(
     {
@@ -179,6 +255,18 @@ PROMPT_CAPTURE_KEYS = frozenset(
         "redaction_strategy",
         "redaction_count",
         "redacted_classes",
+    }
+)
+DETECTOR_COUNT_KEYS = frozenset(
+    {
+        "detector_id",
+        "class",
+        "action",
+        "count",
+        "lines",
+        "lines_truncated",
+        "source_ref",
+        "legal_refs",
     }
 )
 PROHIBITED_RECEIPT_KEYS = frozenset(
@@ -532,53 +620,235 @@ def _validate_policy(policy: dict[str, Any]) -> None:
         raise GuardError("policy-invalid")
     if not isinstance(detectors, list) or not detectors:
         raise GuardError("policy-invalid")
+    term_lists = policy.get("term_lists")
+    if not isinstance(term_lists, dict) or {
+        key: term_lists.get(key) for key in EXPECTED_TERM_LIST_POLICY
+    } != EXPECTED_TERM_LIST_POLICY or set(term_lists) != {*EXPECTED_TERM_LIST_POLICY, "sample"}:
+        raise GuardError("policy-invalid")
+    _term_list(term_lists.get("sample"), sample=True)
     seen: set[str] = set()
     for detector in detectors:
-        if not isinstance(detector, dict):
+        if not isinstance(detector, dict) or set(detector) != {
+            "id",
+            "class",
+            "action",
+            "source_ref",
+            "implementation",
+        }:
             raise GuardError("policy-invalid")
         detector_id = detector.get("id")
         detector_class = detector.get("class")
+        action = detector.get("action")
+        source_ref = detector.get("source_ref")
         implementation = detector.get("implementation")
         if (
             not isinstance(detector_id, str)
             or detector_id in seen
             or detector_class not in DETECTOR_CLASSES
+            or action not in DETECTOR_ACTIONS
+            or not isinstance(source_ref, str)
+            or len(source_ref) < 8
             or not isinstance(implementation, dict)
-            or implementation.get("kind") != "regex"
+        ):
+            raise GuardError("policy-invalid")
+        # A secret or a private key empties the whole record; such a prompt is never sent.
+        if detector_class in WHOLE_PROMPT_REDACTION_CLASSES and action != "block":
+            raise GuardError("policy-invalid")
+        seen.add(detector_id)
+        if detector_class in TERM_LIST_CLASSES:
+            if implementation != {
+                "kind": "term-list",
+                "list": TERM_LIST_CLASSES[str(detector_class)],
+            }:
+                raise GuardError("policy-invalid")
+            continue
+        if (
+            implementation.get("kind") != "regex"
             or implementation.get("engine") != "python-re"
             or not isinstance(implementation.get("pattern"), str)
             or not isinstance(implementation.get("flags"), list)
-            or implementation.get("validator")
-            not in {
-                None,
-                "secret-value-shape",
-                "private-key-pem-block",
-                "email-address-shape",
-                "tckn-checksum",
-                "iban-mod97",
-                "luhn-checksum",
-            }
+            or (
+                implementation.get("validator") is not None
+                and implementation.get("validator") not in REGEX_VALIDATORS
+            )
         ):
             raise GuardError("policy-invalid")
-        expected_validator = {
-            "labelled-secret": "secret-value-shape",
-            "private-key": "private-key-pem-block",
-            "email": "email-address-shape",
-            "tckn": "tckn-checksum",
-            "iban": "iban-mod97",
-            "payment-card": "luhn-checksum",
-        }.get(detector_class)
-        if implementation.get("validator") != expected_validator:
+        if implementation.get("validator") != EXPECTED_VALIDATORS.get(str(detector_class)):
             raise GuardError("policy-invalid")
         if detector_class == "private-key" and (
             implementation.get("pattern") != EXPECTED_PRIVATE_KEY_BEGIN_PATTERN
             or implementation.get("flags") != []
         ):
             raise GuardError("policy-invalid")
-        seen.add(detector_id)
         pattern = _compile_detector(implementation)
         if pattern.search("") is not None:
             raise GuardError("policy-invalid")
+
+
+def _term_list(value: object, *, sample: bool) -> dict[str, Any]:
+    """A validated term list: its key and the digest set of each list; never a readable term."""
+    if not isinstance(value, dict) or set(value) != {
+        "schema_version",
+        "kind",
+        "sample",
+        "version",
+        "key",
+        "lists",
+    }:
+        raise GuardError("term-list-invalid")
+    lists = value.get("lists")
+    version = value.get("version")
+    key = value.get("key")
+    if (
+        value.get("schema_version") != "1.0"
+        or value.get("kind") != "InstitutionTermList"
+        or value.get("sample") is not sample
+        or not isinstance(version, str)
+        or TERM_LIST_VERSION_RE.fullmatch(version) is None
+        or not isinstance(key, str)
+        or TERM_KEY_RE.fullmatch(key) is None
+        or not isinstance(lists, dict)
+        or set(lists) != set(TERM_LIST_NAMES)
+    ):
+        raise GuardError("term-list-invalid")
+    digests: dict[str, frozenset[str]] = {}
+    total = 0
+    for name in TERM_LIST_NAMES:
+        entries = lists[name]
+        if (
+            not isinstance(entries, list)
+            or entries != sorted(set(entries))
+            or any(
+                not isinstance(item, str) or TERM_DIGEST_RE.fullmatch(item) is None
+                for item in entries
+            )
+        ):
+            raise GuardError("term-list-invalid")
+        total += len(entries)
+        digests[name] = frozenset(entries)
+    if total > MAX_TERM_LIST_ENTRIES:
+        raise GuardError("term-list-invalid")
+    return {"key": bytes.fromhex(key), "version": version, "digests": digests}
+
+
+def normalize_term(value: str) -> str:
+    """The one term normalization of the device hook and the factory list tool."""
+    folded = unicodedata.normalize("NFKC", value).casefold()
+    # Turkish dotted and dotless i fold to the same letter, so `İzmir` and `izmir` match.
+    return folded.replace("i̇", "i").replace("ı", "i")
+
+
+def term_digest(key: bytes, normalized: str) -> str:
+    return hmac.digest(key, normalized.encode("utf-8"), "sha256").hex()
+
+
+def term_list_document(
+    terms: dict[str, list[str]], *, key: bytes, version: str, sample: bool
+) -> dict[str, object]:
+    """Build a term list from readable terms; only the keyed digests leave this function."""
+    lists: dict[str, list[str]] = {}
+    for name in TERM_LIST_NAMES:
+        normalized = {
+            " ".join(normalize_term(word) for word in TERM_WORD_RE.findall(term))
+            if name == "project-codenames"
+            else normalize_term(term.strip()).rstrip(".")
+            for term in terms.get(name, [])
+        }
+        lists[name] = sorted(term_digest(key, item) for item in normalized if item)
+    document: dict[str, object] = {
+        "schema_version": "1.0",
+        "kind": "InstitutionTermList",
+        "sample": sample,
+        "version": version,
+        "key": key.hex(),
+        "lists": lists,
+    }
+    _term_list(document, sample=sample)
+    return document
+
+
+def _canonical_sha256(value: object) -> str:
+    return _sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    )
+
+
+def _institution_term_list_path(location: Any = None) -> Path | None:
+    """``institution-terms.json`` at the shared governance root the records use."""
+    try:
+        selected = location if location is not None else _record_location()
+        if selected is None:
+            selected = _records()["resolve_location"]()
+        return Path(selected.root) / INSTITUTION_TERM_LIST_FILE
+    except Exception:
+        return None
+
+
+def _load_terms(
+    policy: dict[str, Any], location: Any = None
+) -> tuple[dict[str, Any], dict[str, object]]:
+    """The institution's list when it is present and valid, otherwise the policy's sample list.
+
+    A missing or unreadable institution list never changes the prompt decision; the receipt
+    shows which list was applied.
+    """
+    sample = policy["term_lists"]["sample"]
+    path = _institution_term_list_path(location)
+    status = "missing"
+    if path is not None and (path.exists() or path.is_symlink()):
+        status = "invalid"
+        try:
+            if not path.is_symlink() and path.is_file():
+                raw = path.read_bytes()
+                if 0 < len(raw) <= MAX_TERM_LIST_BYTES:
+                    loaded = _term_list(json.loads(raw.decode("utf-8")), sample=False)
+                    return loaded, {
+                        "institution_list": "loaded",
+                        "applied": "institution",
+                        "version": loaded["version"],
+                        "sha256": _sha256(raw),
+                    }
+        except (OSError, UnicodeDecodeError, ValueError):
+            pass
+    loaded = _term_list(sample, sample=True)
+    return loaded, {
+        "institution_list": status,
+        "applied": "sample",
+        "version": loaded["version"],
+        "sha256": _canonical_sha256(sample),
+    }
+
+
+def _term_spans(prompt: str, terms: dict[str, Any], list_name: str) -> list[tuple[int, int]]:
+    """Spans whose normalized words, phrases or host names are in the keyed digest list."""
+    digests = terms["digests"][list_name]
+    if not digests:
+        return []
+    key = terms["key"]
+    found: list[tuple[int, int]] = []
+    words = [(match.start(), match.end(), match.group(0)) for match in TERM_WORD_RE.finditer(prompt)]
+    for index in range(len(words)):
+        phrase: list[str] = []
+        for offset in range(MAX_TERM_PHRASE_WORDS):
+            position = index + offset
+            if position >= len(words):
+                break
+            if offset and TERM_PHRASE_GAP_RE.fullmatch(
+                prompt[words[position - 1][1] : words[position][0]]
+            ) is None:
+                break
+            phrase.append(normalize_term(words[position][2]))
+            if term_digest(key, " ".join(phrase)) in digests:
+                found.append((words[index][0], words[position][1]))
+    if list_name == "internal-hostnames":
+        for match in HOSTNAME_RE.finditer(prompt):
+            labels = normalize_term(match.group(0)).split(".")
+            if any(
+                term_digest(key, ".".join(labels[start:])) in digests
+                for start in range(len(labels))
+            ):
+                found.append((match.start(), match.end()))
+    return sorted(set(found))
 
 
 def _compile_detector(implementation: dict[str, Any]) -> re.Pattern[str]:
@@ -711,8 +981,51 @@ def _email_address_shape(prompt: str, start: int, candidate: str) -> bool:
     )
 
 
+def _labelled_field_value(value: str) -> bool:
+    """True when the value after a personal-data label can be a person's name, address or date."""
+    value = value.strip()
+    quoted = len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]
+    value = value[1:-1].strip() if quoted else value.rstrip(SECRET_TRAILING_PUNCTUATION).strip()
+    if not value or SECRET_PLACEHOLDER_RE.fullmatch(value) is not None:
+        return False
+    if not any(character.isalnum() for character in value):
+        return False
+    if quoted:
+        return True
+    if value[0] in "$@{[(<" or LABELLED_VALUE_ASSIGNMENT_RE.match(value) is not None:
+        return False
+    # Code followed by prose: a type name or a code reference first is not a person's data.
+    first = value.split()[0].rstrip(",;:")
+    if (
+        first.casefold() in LABELLED_VALUE_TYPE_WORDS
+        or "(" in first
+        or "[" in first
+        or LABELLED_VALUE_DOTTED_RE.fullmatch(first) is not None
+    ):
+        return False
+    if _reference_like(value):
+        return False
+    call = SECRET_CALL_OR_INDEX_RE.fullmatch(value)
+    if call is not None and _reference_like(call.group("head")):
+        return False
+    return (
+        any(character.isdigit() for character in value)
+        or LABELLED_VALUE_WORDS_RE.search(value) is not None
+    )
+
+
+def _match_span(match: re.Match[str]) -> tuple[int, int]:
+    """A labelled detector masks only its ``value`` group; the label stays readable."""
+    if "value" in match.re.groupindex and match.group("value") is not None:
+        return match.span("value")
+    return match.span()
+
+
 def _validated_match(validator: str | None, prompt: str, match: re.Match[str]) -> bool:
     candidate = match.group(0)
+    if validator == "labelled-field-value":
+        start, end = _match_span(match)
+        return _labelled_field_value(prompt[start:end])
     if validator == "secret-value-shape":
         return _secret_value_shape(candidate)
     if validator == "email-address-shape":
@@ -777,24 +1090,39 @@ def _is_home_account_segment(prompt: str, start: int, end: int, home_account: st
     return HOME_PATH_ROOT_RE.search(root) is not None
 
 
+def _line_numbers(line_starts: list[int], starts: list[int]) -> list[int]:
+    return sorted({bisect.bisect_right(line_starts, start) + 1 for start in starts})
+
+
 def _scan(
     prompt: str,
     policy: dict[str, Any],
     home_account: str | None,
+    terms: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Each matched detector with its action, count, lines and source; never the matched value.
+
+    Term-list detectors run only when ``terms`` is given.
+    """
     counts: list[dict[str, object]] = []
     spans: list[dict[str, object]] = []
+    line_starts = [index + 1 for index, character in enumerate(prompt) if character == "\n"]
     for detector in policy["detectors"]:
         implementation = detector["implementation"]
-        pattern = _compile_detector(implementation)
-        if implementation["validator"] == "private-key-pem-block":
+        if implementation["kind"] == "term-list":
+            if terms is None:
+                continue
+            validated_spans = _term_spans(prompt, terms, str(implementation["list"]))
+        elif implementation["validator"] == "private-key-pem-block":
             validated_spans = _private_key_pem_spans(prompt)
         else:
+            pattern = _compile_detector(implementation)
             validated_spans = [
-                (match.start(), match.end())
+                _match_span(match)
                 for match in pattern.finditer(prompt)
                 if _validated_match(implementation["validator"], prompt, match)
             ]
+            validated_spans = [(start, end) for start, end in validated_spans if end > start]
         if detector["class"] == "email" and home_account is not None:
             validated_spans = [
                 (start, end)
@@ -803,11 +1131,18 @@ def _scan(
             ]
         count = len(validated_spans)
         if count:
+            lines = _line_numbers(line_starts, [start for start, _ in validated_spans])
             counts.append(
                 {
                     "detector_id": detector["id"],
                     "class": detector["class"],
+                    "action": detector["action"],
                     "count": count,
+                    "lines": lines[:MAX_REPORTED_RECEIPT_LINES],
+                    "lines_truncated": len(lines) > MAX_REPORTED_RECEIPT_LINES,
+                    "source_ref": detector["source_ref"],
+                    # No approved ISO or KVKK mapping exists; the factory never invents one.
+                    "legal_refs": [],
                 }
             )
             spans.extend(
@@ -816,6 +1151,7 @@ def _scan(
                     "end": end,
                     "detector_id": detector["id"],
                     "class": detector["class"],
+                    "action": detector["action"],
                 }
                 for start, end in validated_spans
             )
@@ -921,20 +1257,62 @@ def _event_name(client_id: str) -> str:
     return "beforeSubmitPrompt" if client_id == "cursor" else "UserPromptSubmit"
 
 
-def _block_message(prompt: str, spans: list[dict[str, object]]) -> str:
-    """Name each matched data class with its count and line numbers; never the matched value."""
+def _finding_explanations(project_root: Path, spans: list[dict[str, object]]) -> list[str]:
+    """The ASCII reason and basis lines of every blocking detector, in block-message order.
+
+    A ``record-mask`` match lets the prompt through, so it adds no lines.
+    """
+
+    detector_ids: list[str] = []
+    for detector_class in BLOCK_CLASS_LABELS:
+        for span in spans:
+            identifier = str(span.get("detector_id"))
+            if (
+                span.get("class") == detector_class
+                and span.get("action", "block") == "block"
+                and identifier not in detector_ids
+            ):
+                detector_ids.append(identifier)
+    try:
+        client_path = Path(__file__).resolve().with_name("governance_client.py")
+        if client_path.is_symlink() or not client_path.is_file():
+            return [EXPLANATION_UNAVAILABLE]
+        lines = runpy.run_path(str(client_path))["prompt_explanation_lines"](
+            project_root, detector_ids
+        )
+    except Exception:
+        return [EXPLANATION_UNAVAILABLE]
+    if not isinstance(lines, list) or not all(
+        isinstance(line, str) and line.isascii() and line for line in lines
+    ):
+        return [EXPLANATION_UNAVAILABLE]
+    return lines
+
+
+def _block_message(
+    prompt: str, spans: list[dict[str, object]], explanations: list[str] | None = None
+) -> str:
+    """Name each blocking data class with its count and line numbers; never the matched value.
+
+    A ``record-mask`` match lets the prompt through, so it is not named here. The blocking
+    detectors' reason and basis lines follow on their own lines.
+    """
     line_starts = [index + 1 for index, character in enumerate(prompt) if character == "\n"]
     findings: list[str] = []
     for detector_class, label in BLOCK_CLASS_LABELS.items():
-        starts = [int(span["start"]) for span in spans if span["class"] == detector_class]
+        starts = [
+            int(span["start"])
+            for span in spans
+            if span["class"] == detector_class and span.get("action", "block") == "block"
+        ]
         if not starts:
             continue
-        lines = sorted({bisect.bisect_right(line_starts, start) + 1 for start in starts})
+        lines = _line_numbers(line_starts, starts)
         shown = ", ".join(str(line) for line in lines[:MAX_REPORTED_LINES])
         if len(lines) > MAX_REPORTED_LINES:
             shown += " ve sonrasi"
         findings.append(BLOCK_FINDING.format(label=label, count=len(starts), lines=shown))
-    return BLOCK_MESSAGE.format(findings="; ".join(findings))
+    return "\n".join([BLOCK_MESSAGE.format(findings="; ".join(findings)), *(explanations or [])])
 
 
 def _decision_output(client_id: str, blocked: bool, *, message: str = "") -> dict[str, object]:
@@ -953,7 +1331,20 @@ def _decision_output(client_id: str, blocked: bool, *, message: str = "") -> dic
                 }
             )
         return result
-    return {"decision": "block", "reason": message} if blocked else {}
+    if not blocked:
+        return {}
+    if client_id == "claude-code":
+        # Claude Code otherwise appends "Original prompt:" and the blocked text to the message it
+        # shows and writes to the session file on disk.
+        return {
+            "decision": "block",
+            "reason": message,
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "suppressOriginalPrompt": True,
+            },
+        }
+    return {"decision": "block", "reason": message}
 
 
 def _records() -> dict[str, Any]:
@@ -966,6 +1357,76 @@ def _records() -> dict[str, Any]:
 def _record_location() -> Any:
     """The shared governance root; ``None`` selects the fixed operating-system location."""
     return None
+
+
+def _managed_preferences() -> Path | None:
+    """Jamf's managed preference file; ``None`` selects the fixed system path."""
+    return None
+
+
+_SYNC_MODULE: list[dict[str, Any]] = []
+
+
+def _sync_module() -> dict[str, Any]:
+    """The periodic sync script, loaded once per prompt for registration and task upkeep."""
+    if not _SYNC_MODULE:
+        path = Path(__file__).resolve().with_name("authority_sync.py")
+        if path.is_symlink() or not path.is_file():
+            raise GuardError("authority-sync-unavailable")
+        _SYNC_MODULE.append(runpy.run_path(str(path)))
+    return _SYNC_MODULE[0]
+
+
+def _task_scheduler() -> Any:
+    """The operating system's per-user task scheduler for the periodic authority sync."""
+    return _sync_module()["default_scheduler"](location=_record_location())
+
+
+def _device_gate() -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
+    """Read the local device stop state before any other check; never a network call."""
+    try:
+        records = _records()
+        decision, state = records["device_gate"](
+            location=_record_location(), managed_preferences=_managed_preferences()
+        )
+    except Exception:
+        return "allow", None, None
+    return decision, state, records
+
+
+def _sync_notices(
+    decision: str, state: dict[str, Any] | None, records: dict[str, Any] | None
+) -> list[str]:
+    """Register this project for the periodic sync, keep its task installed, collect notices."""
+    if records is None:
+        return []
+    notices: list[str] = []
+    try:
+        project_root = Path(__file__).resolve(strict=True).parents[2]
+        project_id = _read_project_id(project_root)
+    except Exception:
+        return notices
+    if decision == "allow-warn" and records["unsynced_too_long"](
+        project_id, location=_record_location()
+    ):
+        notices.append(str(records["DEVICE_UNVERIFIED_WARNING"]))
+    if records["update_pending"](state, project_id):
+        notices.append(str(records["UPDATE_PENDING_NOTICE"]))
+    try:
+        sync = _sync_module()
+        notices.extend(
+            sync["on_prompt"](
+                project_root,
+                project_id,
+                python=Path(sys.executable),
+                location=_record_location(),
+                scheduler=_task_scheduler(),
+                records=records,
+            )
+        )
+    except Exception:
+        notices.append("KT_SYNC_TASK_UNAVAILABLE: Yonetisim esitleme gorevi kurulamadi.")
+    return notices
 
 
 def _native(record: dict[str, object], field: str) -> str | None:
@@ -1103,15 +1564,27 @@ def _validate_receipt_for_persistence(receipt: dict[str, object]) -> None:
     ):
         raise GuardError("receipt-invalid")
     for detector_count in detector_counts:
+        if not isinstance(detector_count, dict) or set(detector_count) != DETECTOR_COUNT_KEYS:
+            raise GuardError("receipt-invalid")
+        number = detector_count.get("count")
+        lines = detector_count.get("lines")
         if (
-            not isinstance(detector_count, dict)
-            or set(detector_count) != {"detector_id", "class", "count"}
-            or detector_count.get("class") not in DETECTOR_CLASSES
-            or not isinstance(detector_count.get("count"), int)
-            or isinstance(detector_count.get("count"), bool)
-            or int(detector_count["count"]) < 1
+            detector_count.get("class") not in DETECTOR_CLASSES
+            or detector_count.get("action") not in DETECTOR_ACTIONS
+            or not isinstance(number, int)
+            or isinstance(number, bool)
+            or number < 1
+            or not isinstance(lines, list)
+            or not lines
+            or any(not isinstance(line, int) or isinstance(line, bool) or line < 1 for line in lines)
+            or lines != sorted(set(lines))
+            or len(lines) > min(number, MAX_REPORTED_RECEIPT_LINES)
+            or not isinstance(detector_count.get("lines_truncated"), bool)
+            or not isinstance(detector_count.get("source_ref"), str)
+            or detector_count.get("legal_refs") != []
         ):
             raise GuardError("receipt-invalid")
+    _validate_term_list_receipt(receipt.get("term_list"), receipt.get("outcome"))
 
     outcome = receipt.get("outcome")
     decision = receipt.get("decision")
@@ -1147,17 +1620,18 @@ def _validate_receipt_for_persistence(receipt: dict[str, object]) -> None:
             and count == 0
             and classes == []
         )
-    elif outcome == "matched":
-        detector_classes = sorted(
-            {str(item["class"]) for item in detector_counts if isinstance(item, dict)}
-        )
+    elif outcome in {"matched", "record-masked"}:
+        detector_classes = {str(item["class"]) for item in detector_counts}
+        blocking = any(item["action"] == "block" for item in detector_counts)
+        # Overlapping matches leave one mask in the text, so a counted class may have no own mask.
         common_valid = (
-            decision == "block"
+            decision == ("block" if outcome == "matched" else "allow")
+            and blocking is (outcome == "matched")
             and bool(detector_counts)
             and isinstance(text, str)
             and count >= 1
             and bool(classes)
-            and classes == detector_classes
+            and set(classes) <= detector_classes
         )
         if mode == "sensitive-span-redacted":
             valid = (
@@ -1192,6 +1666,26 @@ def _validate_receipt_for_persistence(receipt: dict[str, object]) -> None:
         raise GuardError("receipt-invalid")
 
 
+def _validate_term_list_receipt(value: object, outcome: object) -> None:
+    """A scanned prompt names the term list applied; an unscanned one carries none."""
+    if outcome in {"input-invalid", "guard-error"}:
+        if value is not None:
+            raise GuardError("receipt-invalid")
+        return
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"institution_list", "applied", "version", "sha256"}
+        or value.get("institution_list") not in {"loaded", "missing", "invalid"}
+        or value.get("applied")
+        != ("institution" if value.get("institution_list") == "loaded" else "sample")
+        or not isinstance(value.get("version"), str)
+        or TERM_LIST_VERSION_RE.fullmatch(str(value.get("version"))) is None
+        or not isinstance(value.get("sha256"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", str(value.get("sha256"))) is None
+    ):
+        raise GuardError("receipt-invalid")
+
+
 def _receipt(
     *,
     client_id: str,
@@ -1202,6 +1696,7 @@ def _receipt(
     prompt_capture: dict[str, object],
     detector_counts: list[dict[str, object]],
     invocation_context: dict[str, object],
+    term_list: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
         "schema_version": "2.0",
@@ -1218,6 +1713,7 @@ def _receipt(
         "capture_scope": "user-prompt-text-only",
         "prompt_capture": prompt_capture,
         "detector_counts": detector_counts,
+        "term_list": term_list,
         "raw_sensitive_content_recorded": False,
         "excluded_content_recorded": False,
     }
@@ -1249,8 +1745,9 @@ def _finish(
     prompt_capture: dict[str, object],
     detector_counts: list[dict[str, object]],
     message: str = "",
+    term_list: dict[str, object] | None = None,
 ) -> tuple[dict[str, object], dict[str, object] | None]:
-    blocked = outcome != "clean"
+    blocked = outcome not in {"clean", "record-masked"}
     receipt: dict[str, object] | None = None
     if context is not None:
         project_id, state_policy, state_policy_digest = context
@@ -1262,6 +1759,7 @@ def _finish(
             outcome=outcome,
             prompt_capture=prompt_capture,
             detector_counts=detector_counts,
+            term_list=term_list,
             invocation_context=_invocation_context(
                 client_id,
                 event,
@@ -1325,7 +1823,8 @@ def _run(client_id: str) -> tuple[dict[str, object], dict[str, object] | None]:
             ),
         )
     try:
-        counts, spans = _scan(prompt, policy, _home_account_name())
+        terms, term_list = _load_terms(policy)
+        counts, spans = _scan(prompt, policy, _home_account_name(), terms)
         prompt_capture = _prompt_capture(prompt, spans, policy)
     except GuardError:
         return _finish(
@@ -1339,17 +1838,39 @@ def _run(client_id: str) -> tuple[dict[str, object], dict[str, object] | None]:
             detector_counts=[],
             message=SAFE_ERROR_MESSAGE,
         )
+    blocking = any(item["action"] == "block" for item in counts)
     return _finish(
         client_id,
         context,
         event,
         policy=policy,
         policy_digest=policy_digest,
-        outcome="matched" if counts else "clean",
+        outcome="matched" if blocking else ("record-masked" if counts else "clean"),
         prompt_capture=prompt_capture,
         detector_counts=counts,
-        message=_block_message(prompt, spans) if counts else "",
+        message=(
+            _block_message(prompt, spans, _finding_explanations(project_root, spans))
+            if blocking
+            else ""
+        ),
+        term_list=term_list,
     )
+
+
+def record_content_classes(
+    project_root: Path, texts: list[str], location: Any = None
+) -> list[str]:
+    """Data classes the prompt policy finds in record text; the record writer's last gate.
+
+    The same engine as the prompt: the project's validated policy and the applied term list.
+    """
+    policy, _ = _read_policy(project_root)
+    terms, _ = _load_terms(policy, location)
+    found: set[str] = set()
+    for text in texts:
+        counts, _ = _scan(text, policy, None, terms)
+        found.update(str(item["class"]) for item in counts)
+    return sorted(found)
 
 
 def _interpreter_status() -> str | None:
@@ -1381,6 +1902,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--client", choices=CLIENTS, required=True)
     arguments = parser.parse_args()
+    decision, state, records = _device_gate()
+    if records is not None and decision in {"stop", "unverified"}:
+        with contextlib.suppress(OSError):
+            sys.stdin.buffer.read(FALLBACK_MAX_EVENT_BYTES + 1)
+        output = _decision_output(
+            arguments.client, True, message=records["gate_message"](decision, marker=False)
+        )
+        print(json.dumps(output, separators=(",", ":"), sort_keys=True))
+        records["record_refusal"](
+            "prompt", decision, client=arguments.client, location=_record_location()
+        )
+        return 0
     if _interpreter_status() is not None:
         with contextlib.suppress(OSError):
             sys.stdin.buffer.read(FALLBACK_MAX_EVENT_BYTES + 1)
@@ -1398,6 +1931,8 @@ def main() -> int:
     print(json.dumps(output, separators=(",", ":"), sort_keys=True))
     for code in dict.fromkeys(code for code in _WARNINGS if code is not None):
         print(RECORD_WARNING.format(code=code), file=sys.stderr)
+    for notice in dict.fromkeys(_sync_notices(decision, state, records)):
+        print(notice, file=sys.stderr)
     return 0
 
 

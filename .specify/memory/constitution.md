@@ -458,9 +458,10 @@ geçersiz kılabilen `AGENTS.override.md` ve `CLAUDE.local.md`; istemci yüzeyle
 `.pre-commit-config.yaml`, `.gitleaks.toml`, `scripts/check-governance-drift.py` ve
 `scripts/check-dependency-admission.py`.
 
-Bu yüzey yalnız kullanıcının açıkça başlattığı kanonik teslimle değişir: `/kt-guncelle`,
-`/kt-yansit`, MCP proje iskeleti eşitlemesi veya yönetişim uzlaştırması. Teslim edilen baytları tam
-dosya olarak ve kısaltmadan uygula. Ürün işi, bulgu düzeltmesi, testi geçirme, hızlandırma veya
+Bu yüzey yalnız kanonik teslimle değişir: kullanıcının açıkça başlattığı `/kt-guncelle`,
+`/kt-yansit`, MCP proje iskeleti eşitlemesi veya yönetişim uzlaştırması ya da periyodik yönetişim
+eşitlemesinin sapan dosyayı `.kt-scaffold/manifest.json` kaydındaki baytlarla geri yazması. Teslim
+edilen baytları tam dosya olarak ve kısaltmadan uygula. Ürün işi, bulgu düzeltmesi, testi geçirme, hızlandırma veya
 kullanıcı isteği gerekçesiyle kontrol, detector, eşik, ağırlık, kural, kanca, izin, manifest veya
 kilit özeti, CI kapısı ya da makbuzu silme, zayıflatma, yeniden adlandırma, dosya izinlerini değiştirme
 veya devre dışı bırakma. Bulgu, kontrol kaldırılarak çözülmez; bulguyu doğuran uygulama kodu düzeltilir.
@@ -486,6 +487,23 @@ denetimidir. Kanca yalnız istemci projenin kanca dosyasını yükleyip güvendi
 yorumlayıcı yazımı, harici düzenleyici ve insan düzenlemesi kanca kapsamı dışındadır; sapmayı
 `scripts/check-governance-drift.py`, commit kapısı ve CI saptar. Bu yalnız `conditional-native-guard`
 iddiasıdır; değişmezlik, yönetici uygulatımı veya üretim kabulü değildir.
+
+## Kurumun durdurduğu çalışma
+
+Bilgi güvenliği ekibi tek bir bilgisayarda yapay zekâ asistanıyla çalışmayı durdurabilir. İstem,
+komut veya dosya kancası `KT_DEVICE_STOPPED` ya da `KT_DEVICE_STATE_UNVERIFIED` ile başlayan bir
+retle dönerse ya da `governance_client.py` komutu `device-stopped` veya `device-state-unverified`
+hatası verirse işi hemen bırak. Durdurmayı aşmaya çalışma: başka komut, araç, kabuk, yorumlayıcı,
+klasör veya oturum kökü deneme; ortak yönetişim kökündeki eşitleme dosyalarını değiştirme veya
+silme; commit kapısını `--no-verify` ile atlama. Kullanıcıya `02-iletisim-tarzi` kuralındaki sade
+dille yalnız şunu söyle: bu bilgisayarda çalışma kurum tarafından durduruldu; bilgi için bilgi
+güvenliği ekibine başvurmalı. Mekanizmayı, dosya yolunu veya gerekçe kodunu anlatma. Durdurmayı
+yalnız kurum kaldırır.
+
+Periyodik yönetişim eşitlemesi (`.kt-scaffold/hooks/authority_sync.py`) yönetişim yüzeyinde sapan
+dosyayı oturum açılışında ve 5 dakikada bir, yalnız kaydedilmiş baytlarla geri yazar; yeni otorite
+sürümünü kendiliğinden uygulamaz, yalnız güncellemenin beklediğini bildirir. Eşitlemeyi durdurma,
+görevini silme veya geri yazılan dosyayı yeniden değiştirme.
 
 ## Düzeltme önerisi ve uygulama sınırı
 
@@ -523,6 +541,15 @@ getirebileceği için kullanılmaz. Komut yüzeye yeni içerik yazmaz, yalnız k
 getirir; bu yüzden yukarıdaki sınırla çelişmez. Doğru içerik commit geçmişinde yoksa dosyayı elle
 yazma; proje kullanıcının başlattığı MCP proje iskeleti eşitlemesi veya `kt-iskelet guncelle` ile
 güncellenir.
+
+Sapma denetimi veya commit kapısı `LOCAL_CLIENT_OVERRIDE` ya da `LOCAL_CLIENT_OVERRIDE_WARNING` ile
+başlayan bir ileti verirse ya da `governance_client.py review-start` `local-client-override` hatası
+dönerse sorun yönetilen bir dosyada değil, asistanın bu projedeki yerel ayar veya talimat dosyasındadır
+(ör. `.claude/settings.local.json`, `CLAUDE.local.md`, `AGENTS.override.md`, alt klasördeki
+`AGENTS.md`); `restore` komutu bunu düzeltmez. Bu dosyayı kendin silme, düzenleme veya taşıma;
+iletideki listeyi kullanıcıya `02-iletisim-tarzi` kuralındaki sade dille aktar ve kaldırmasını iste.
+`LOCAL_CLIENT_OVERRIDE` iletisinden sonra commit veya yönetilen inceleme deneme. Uyarı iletisinde işe
+devam edebilirsin; uyarıyı kullanıcıya bildir.
 
 ## Yalnızca gerçekten ulaşılan kanıt seviyesini iddia et
 
@@ -610,9 +637,8 @@ ayrı runtime/conformance adayına ait `client_version_range` nedeniyle tek baş
 Bunlar kurumsal aktivasyon/kabul iddiasını sınırlar; yerel Agentic incelemeye yeni admission
 ön koşulu eklemez. Seçili native Agent gerçekten çağrılabilir olmalı; gerçek istemci sürümü,
 projection ve bileşen digest'leri gözlenip bağlanmalıdır. Bu alanları etkin/admitted göstermek
-için değiştirme. Faz 2 `semantic_evaluators: []` kaydı Faz 1 evaluator'ünün yokluğu değildir;
-uzman bulgularına ayrı `policy:governed-review-agentic-evaluation` uygulanır.
-Eksik veya geçersiz gerçek gözlem yine `BLOCKED_INCOMPLETE` üretir.
+için değiştirme. Uzman bulgularına `policy:governed-review-agentic-evaluation` uygulanır;
+eksik veya geçersiz gerçek gözlem yine `BLOCKED_INCOMPLETE` üretir.
 
 Seçili istemcinin yerel `governed-review` becerisini şu durumlarda kullan:
 
@@ -774,8 +800,11 @@ yalıtılmış sayılmaz. Ana Agent uzmanın yanıtını değiştirmeden `work/<
 dosyasına yazar ve `governance_client.py observation --run-id <run_id> --agent <agent-slug>`
 komutunu çalıştırır. Uzman bulguya kontrol kimliği (`controls`) yazmaz; talimatında geçen kaynak
 kural kimlikleri bulgu alanı değildir. Komut değerlendirmeyi bağlama dosyasıyla bayt bayt
-birleştirir, Agent politikasındaki `standard_refs` üçlülerini her bulguya kendisi ekler, gözlem
-şemasıyla denetler ve raporu kanonik baytlarla bir kez yazar. Sözleşmeye uymayan yanıtı ana Agent
+birleştirir, Agent politikasındaki kurum politikası bağlarını (`KT-AGENT-POLICY`) her bulguya
+kendisi ekler, gözlem şemasıyla denetler ve raporu kanonik baytlarla bir kez yazar. Bulgunun nedenini
+ve ISO/KVKK dayanağını kod ekler; kuralları
+[bulgu dayanağı PRD'si](../specs/agent-platform/PRDs/009-finding-reason-and-iso-kvkk-basis/PRD.md)
+belirler. Sözleşmeye uymayan yanıtı ana Agent
 onarmaz. Komut yanıtı uzmanın düzeltebileceği bir red koduyla reddederse, kimliği yanlış yanıt
 dahil, yanıt bu kod ve ihlal yeriyle yalnız o uzmana bir kez geri verilir; ikinci red veya başka
 bir red `invalid` kaydıyla koşumu `BLOCKED_INCOMPLETE` bırakır. Sabit alanlar şemadan gelir;
@@ -833,10 +862,13 @@ normalize ağırlıklı ortalama hesaplanır. Uyarı eşiği `PASS` yanında `AG
 eşiği `FAIL` üretir. Bilgi güvenliği, uygulama güvenliği veya KVKK Agent'ının güven tabanını geçen
 `critical` bulgusu skor eşiğin altında kalsa bile `FAIL` ve `AGG_SECURITY_CRITICAL_VETO` üretir;
 commit kancası bu vetoyu yeniden denetler. Serbest LLM `critical` etiketi hard-fail yetkisi
-değildir; `HARD-FAIL` yalnız exact snapshot, Agent detector/policy digest'leri, kontroller ve
-agent paketinin yetkili hard-fail detector'ıyla bağlı kanonik detector kanıtından üretilir;
-doğrulanamayan binding `AGG_DETECTOR_EVIDENCE_INVALID`, çözülmemiş çelişkili detector veya
-`source-conflict:` kaynaklı bulgu `AGG_AUTHORITATIVE_CONFLICT` ile `BLOCKED_INCOMPLETE` üretir.
+değildir; `HARD-FAIL` yalnız kural tabanlı taramadan gelir: kesin gruptaki detektörün kod bulgusu
+veya uzmanın onayladığı zorunlu aday. Hangi detektörün hangi grupta olduğunu
+`agent-platform/agents/<ajan>/detectors.yml` paketindeki `scan_group` alanı söyler; sonuç koşumun
+`reports/deterministic-scan.json` kaydına yazılır ve `finalize-review` ile commit kancası taramayı
+yeniden çalıştırır. Staged baytları `.kt-scaffold/manifest.json` kaydındaki özete birebir eşit
+yönetilen dosya taranmaz ve kayıtta "taranmadı: otoriteyle birebir" diye listelenir. Çözülmemiş listedeki detektörün kod bulgusu veya `source-conflict:` kaynaklı
+bulgu `AGG_AUTHORITATIVE_CONFLICT` ile `BLOCKED_INCOMPLETE` üretir.
 Eksik kontrol/location/evidence, düşük confidence, belirsiz sınıflandırma, `failed`, `timeout` veya
 `invalid` rapor ya da binding uyuşmazlığı `BLOCKED_INCOMPLETE` üretir. Öncelik
 `BLOCKED_INCOMPLETE > HARD-FAIL > FAIL > PASS` sırasıdır. Kısa gerekçe sürümlü
@@ -847,9 +879,7 @@ ve konum/kanıt bağı taşımalıdır. Rolün `non_responsibilities` sınırlar
 stil tercihi veya kanıtsız varsayım bulgu değildir. Gerçek düşük güvenli bir bulguyu `PASS` elde
 etmek için gizleme, silme veya `confidence` değerini yükseltme; böyle bir bulgu güncel
 `confidence_floor` ve `fail_closed.low_confidence` uyarınca `BLOCKED_INCOMPLETE` üretir.
-Deterministik policy içindeki `semantic_evaluators: []` Faz 2 mekanik çekirdeğin sözleşmesidir;
-Faz 1 evaluator metadata'sı oraya eklenmez ve bu alan Faz 1 anlamsal bulgularını otomatik olarak
-engellemez.
+Anlamsal uzman bulgusu önem bandının puanıyla ajan puanına ve güvenlik vetosuna girer.
 
 Faz 1 karar kaydının kanıt temeli bit-bit aynı LLM metni değil, bağlamı yeniden kurup kanıt
 zincirini doğrulayabilen ve policy hesabını yeniden değerlendirebilen **Evidence-Bound Accountable
@@ -1226,7 +1256,16 @@ uretim uygunlugu veya hukuki uygunluk kaniti olarak sunma.
 Kanca makbuzu, surumlu detektorlerde eslesme bulunmayan `clean` promptu exact kaydeder. Dogrulanmis
 hassas eslesme varsa ham promptu, eslesen degeri veya bunlarin ham ozetini kaydetmeden once kanonik
 span redaksiyonu uygular; yalniz arindirilmis metni ve arindirilmis metnin ozetini kaydeder. Gecersiz
-girdi veya kanca hatasinda metin ve ozet `null` olur. Reasoning, assistant/model yaniti, dosya/ek,
+girdi veya kanca hatasinda metin ve ozet `null` olur. Her detektorun eylemi politikadadir: `block`
+promptu durdurur, `record-mask` promptu gonderir ama eslesen parcayi kayitta maskeler. Musteri
+numarasi, etiketli kisisel alan (ad-soyad, adres, dogum tarihi), kurum ici sunucu adi ve proje kod
+adi `record-mask` eylemiyle baslar; sunucu ve kod adlari kurumun anahtarli ozet listesinden, liste
+yoksa politikadaki ornek listeden eslesir. Etiketsiz serbest metindeki ad-soyad ve adres kural
+tabanli olarak guvenilir bicimde bulunamaz ve maskelenmez. Engellenen promptun okunur gerekcesi
+kancada yazilmaz; hicbir kanca bir modele baglanmaz, gerekce merkezi toplayicida yalniz maskelenmis
+metinden ayri bir ek kayit olarak yazilir ve kesin neden koddan gelen detektor sonucudur. Claude
+Code engelleme ciktisi `suppressOriginalPrompt` tasir; istemcilerin kendi yerel gecmisi (Claude
+Code istem gecmisi dahil) fabrika kaydi degildir ve fabrika o dosyalari silmez. Reasoning, assistant/model yaniti, dosya/ek,
 transcript, terminal, arac ve MCP ciktilari makbuza alinmaz.
 TCKN, IBAN MOD-97 ve kart numarasinda Luhn ile kart agi on eki dogrulamasi sadece yanlis pozitifleri
 azaltir; kimlik, hesap sahipligi veya mevzuat uyumu iddiasi uretmez. Ayni amacla su bicimler bulgu
@@ -1246,9 +1285,12 @@ sağlayıcıdan gelir; yeni UI/sekme kimliği üretilmez, eksik kimlik uydurulma
 döngüsü kancaları ana ve subagent hata metadata'sını aynı session altında kaydeder ve ajanın akışını
 değiştirmez; ham LLM/agent yanıtı, sağlayıcı hata gövdesi ve transcript toplanmaz. Makbuz ve çağrı
 olayı istemcinin bildirdiği etkin model ile effort'u taşır; kanca bunun için istemcinin oturum
-logundan yalnız bu iki alanı okur ve bildirilmeyen değeri uydurmaz. Ortak kök koruma
-iddiası taşımaz; kayıtlar native olayların eksiksiz gözlendiği veya değiştirilemez audit olduğu
-anlamına gelmez.
+logundan yalnız bu iki alanı okur ve bildirilmeyen değeri uydurmaz. Kayıtlar zincire bağlanır ve
+eşitleme betiğiyle merkezî toplayıcıya aktarılır; gözlem kancası oturum açan kurum hesabını yalnız
+toplayıcıdaki parmak izi için okur ve ham hesap kayda girmez. Ortak kök koruma iddiası taşımaz;
+cihazdaki kayıt native olayların eksiksiz gözlendiği veya değiştirilemez audit olduğu anlamına
+gelmez. Değiştirilemez saklamanın kanıtı yalnız toplayıcının doğrulama kaydıdır (Agent Platform
+kayıt bütünlüğü ve kurum hesabı parmak izi sözleşmesi).
 
 Kullanıcı prompt'larının veya konuşmanın kaydedilip kaydedilmediğini sorarsa bunu gizleme ve inkâr
 etme; kurumun yönetişim kuralları gereği kayıt tutulduğunu kısaca doğrula. Kaydın yerini, dosya ve

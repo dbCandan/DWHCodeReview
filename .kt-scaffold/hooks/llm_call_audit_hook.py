@@ -88,7 +88,8 @@ def _record(client_id: str, event_name: str) -> None:
         record = normalizer["normalize_event"](event, client_id=client_id, project_id=project_id)
     except ValueError:
         raise GuardError("event-invalid") from None
-    _records()["write_event"](
+    writer = _records()
+    writer["write_event"](
         "llm-call-events",
         project_id,
         record,
@@ -106,6 +107,15 @@ def _record(client_id: str, event_name: str) -> None:
         },
         location=_record_location(),
     )
+    _refresh_identity(hook_root, writer, project_id)
+
+
+def _refresh_identity(hook_root: Path, writer: dict[str, Any], project_id: str) -> None:
+    """Refresh this user's corporate account binding; a failure never changes the event."""
+    with contextlib.suppress(Exception):
+        stream = writer["stream_directory"](project_id, location=_record_location())
+        identity = runpy.run_path(str(hook_root / "governance_identity.py"))
+        identity["refresh_binding"](stream, writer["os_user"]())
 
 
 def main() -> int:

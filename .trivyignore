@@ -3,7 +3,7 @@
 # advisory, carries an expiry date and is recorded in dependency-admission.json. An expired entry
 # stops applying, so the finding blocks the verdict again until it is fixed.
 
-# minimatch 10.2.6 and 5.1.9 in the frontend lock that kt-scaffold generation 54 admits. The only
+# minimatch 10.2.6 and 5.1.9 in the frontend lock that kt-scaffold generation 55 admits. The only
 # fix, 11.0.1, is a major released on 2026-10-27 that the frontend's npm min-release-age=7 admits
 # from 2026-11-03. Owner decision: hold this one advisory until 2026-11-04.
 CVE-2026-118764 exp:2026-11-04

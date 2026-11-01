@@ -93,9 +93,8 @@ ayrı runtime/conformance adayına ait `client_version_range` nedeniyle tek baş
 Bunlar kurumsal aktivasyon/kabul iddiasını sınırlar; yerel Agentic incelemeye yeni admission
 ön koşulu eklemez. Seçili native Agent gerçekten çağrılabilir olmalı; gerçek istemci sürümü,
 projection ve bileşen digest'leri gözlenip bağlanmalıdır. Bu alanları etkin/admitted göstermek
-için değiştirme. Faz 2 `semantic_evaluators: []` kaydı Faz 1 evaluator'ünün yokluğu değildir;
-uzman bulgularına ayrı `policy:governed-review-agentic-evaluation` uygulanır.
-Eksik veya geçersiz gerçek gözlem yine `BLOCKED_INCOMPLETE` üretir.
+için değiştirme. Uzman bulgularına `policy:governed-review-agentic-evaluation` uygulanır;
+eksik veya geçersiz gerçek gözlem yine `BLOCKED_INCOMPLETE` üretir.
 
 Seçili istemcinin yerel `governed-review` becerisini şu durumlarda kullan:
 
@@ -257,8 +256,11 @@ yalıtılmış sayılmaz. Ana Agent uzmanın yanıtını değiştirmeden `work/<
 dosyasına yazar ve `governance_client.py observation --run-id <run_id> --agent <agent-slug>`
 komutunu çalıştırır. Uzman bulguya kontrol kimliği (`controls`) yazmaz; talimatında geçen kaynak
 kural kimlikleri bulgu alanı değildir. Komut değerlendirmeyi bağlama dosyasıyla bayt bayt
-birleştirir, Agent politikasındaki `standard_refs` üçlülerini her bulguya kendisi ekler, gözlem
-şemasıyla denetler ve raporu kanonik baytlarla bir kez yazar. Sözleşmeye uymayan yanıtı ana Agent
+birleştirir, Agent politikasındaki kurum politikası bağlarını (`KT-AGENT-POLICY`) her bulguya
+kendisi ekler, gözlem şemasıyla denetler ve raporu kanonik baytlarla bir kez yazar. Bulgunun nedenini
+ve ISO/KVKK dayanağını kod ekler; kuralları
+[bulgu dayanağı PRD'si](../specs/agent-platform/PRDs/009-finding-reason-and-iso-kvkk-basis/PRD.md)
+belirler. Sözleşmeye uymayan yanıtı ana Agent
 onarmaz. Komut yanıtı uzmanın düzeltebileceği bir red koduyla reddederse, kimliği yanlış yanıt
 dahil, yanıt bu kod ve ihlal yeriyle yalnız o uzmana bir kez geri verilir; ikinci red veya başka
 bir red `invalid` kaydıyla koşumu `BLOCKED_INCOMPLETE` bırakır. Sabit alanlar şemadan gelir;
@@ -316,10 +318,13 @@ normalize ağırlıklı ortalama hesaplanır. Uyarı eşiği `PASS` yanında `AG
 eşiği `FAIL` üretir. Bilgi güvenliği, uygulama güvenliği veya KVKK Agent'ının güven tabanını geçen
 `critical` bulgusu skor eşiğin altında kalsa bile `FAIL` ve `AGG_SECURITY_CRITICAL_VETO` üretir;
 commit kancası bu vetoyu yeniden denetler. Serbest LLM `critical` etiketi hard-fail yetkisi
-değildir; `HARD-FAIL` yalnız exact snapshot, Agent detector/policy digest'leri, kontroller ve
-agent paketinin yetkili hard-fail detector'ıyla bağlı kanonik detector kanıtından üretilir;
-doğrulanamayan binding `AGG_DETECTOR_EVIDENCE_INVALID`, çözülmemiş çelişkili detector veya
-`source-conflict:` kaynaklı bulgu `AGG_AUTHORITATIVE_CONFLICT` ile `BLOCKED_INCOMPLETE` üretir.
+değildir; `HARD-FAIL` yalnız kural tabanlı taramadan gelir: kesin gruptaki detektörün kod bulgusu
+veya uzmanın onayladığı zorunlu aday. Hangi detektörün hangi grupta olduğunu
+`agent-platform/agents/<ajan>/detectors.yml` paketindeki `scan_group` alanı söyler; sonuç koşumun
+`reports/deterministic-scan.json` kaydına yazılır ve `finalize-review` ile commit kancası taramayı
+yeniden çalıştırır. Staged baytları `.kt-scaffold/manifest.json` kaydındaki özete birebir eşit
+yönetilen dosya taranmaz ve kayıtta "taranmadı: otoriteyle birebir" diye listelenir. Çözülmemiş listedeki detektörün kod bulgusu veya `source-conflict:` kaynaklı
+bulgu `AGG_AUTHORITATIVE_CONFLICT` ile `BLOCKED_INCOMPLETE` üretir.
 Eksik kontrol/location/evidence, düşük confidence, belirsiz sınıflandırma, `failed`, `timeout` veya
 `invalid` rapor ya da binding uyuşmazlığı `BLOCKED_INCOMPLETE` üretir. Öncelik
 `BLOCKED_INCOMPLETE > HARD-FAIL > FAIL > PASS` sırasıdır. Kısa gerekçe sürümlü
@@ -330,9 +335,7 @@ ve konum/kanıt bağı taşımalıdır. Rolün `non_responsibilities` sınırlar
 stil tercihi veya kanıtsız varsayım bulgu değildir. Gerçek düşük güvenli bir bulguyu `PASS` elde
 etmek için gizleme, silme veya `confidence` değerini yükseltme; böyle bir bulgu güncel
 `confidence_floor` ve `fail_closed.low_confidence` uyarınca `BLOCKED_INCOMPLETE` üretir.
-Deterministik policy içindeki `semantic_evaluators: []` Faz 2 mekanik çekirdeğin sözleşmesidir;
-Faz 1 evaluator metadata'sı oraya eklenmez ve bu alan Faz 1 anlamsal bulgularını otomatik olarak
-engellemez.
+Anlamsal uzman bulgusu önem bandının puanıyla ajan puanına ve güvenlik vetosuna girer.
 
 Faz 1 karar kaydının kanıt temeli bit-bit aynı LLM metni değil, bağlamı yeniden kurup kanıt
 zincirini doğrulayabilen ve policy hesabını yeniden değerlendirebilen **Evidence-Bound Accountable

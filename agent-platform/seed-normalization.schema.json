@@ -38,10 +38,10 @@
           "const": "governance-crosswalk:desktop-agents-v1"
         },
         "version": {
-          "const": "1.19.0"
+          "const": "1.21.0"
         },
         "as_of": {
-          "const": "2026-10-08"
+          "const": "2026-11-01"
         },
         "owner": {
           "const": "team:ai-governance"
@@ -189,6 +189,21 @@
           },
           "minContains": 1,
           "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "const": "source-conflict:python-jose-allowed-and-pyjwt-profile"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
         }
       ]
     },
@@ -239,7 +254,7 @@
                 },
                 {
                   "name": "sqlalchemy",
-                  "version": "2.0.52",
+                  "version": "2.1.1",
                   "license": "MIT"
                 },
                 {
@@ -302,7 +317,7 @@
                 },
                 {
                   "name": "black",
-                  "version": "26.5.1",
+                  "version": "26.10.1",
                   "license": "MIT"
                 },
                 {
@@ -327,12 +342,12 @@
                 },
                 {
                   "name": "setuptools",
-                  "version": "84.0.0",
+                  "version": "84.1.0",
                   "license": "MIT"
                 },
                 {
                   "name": "ruff",
-                  "version": "0.16.6",
+                  "version": "0.16.9",
                   "license": "MIT"
                 }
               ]
@@ -574,6 +589,9 @@
             },
             {
               "$ref": "#/$defs/sec009LoopbackResolution"
+            },
+            {
+              "$ref": "#/$defs/jwtLibraryProfileResolution"
             }
           ]
         }
@@ -772,17 +790,51 @@
                       }
                     },
                     "else": {
-                      "not": {
+                      "if": {
+                        "properties": {
+                          "id": {
+                            "const": "source-conflict:python-jose-allowed-and-pyjwt-profile"
+                          }
+                        },
                         "required": [
-                          "resolution"
+                          "id"
                         ]
                       },
-                      "properties": {
-                        "resolution_status": {
-                          "const": "owner-resolution-required"
+                      "then": {
+                        "required": [
+                          "resolution"
+                        ],
+                        "properties": {
+                          "resolution_status": {
+                            "const": "resolved-by-technology-profile"
+                          },
+                          "authority_disposition": {
+                            "const": "source-preserved-explicit-profile-precedence"
+                          },
+                          "resolution": {
+                            "$ref": "#/$defs/jwtLibraryProfileResolution"
+                          },
+                          "source_refs": {
+                            "const": [
+                              "governance-source:desktop-agents/oss-license/agent.md#instruction/document",
+                              "governance-source:desktop-agents/oss-license/allowlist.yaml#allowlist/approved-package/python-jose"
+                            ]
+                          }
+                        }
+                      },
+                      "else": {
+                        "not": {
+                          "required": [
+                            "resolution"
+                          ]
                         },
-                        "authority_disposition": {
-                          "const": "preserved-without-silent-precedence"
+                        "properties": {
+                          "resolution_status": {
+                            "const": "owner-resolution-required"
+                          },
+                          "authority_disposition": {
+                            "const": "preserved-without-silent-precedence"
+                          }
                         }
                       }
                     }
@@ -1062,6 +1114,60 @@
             "::1",
             "localhost"
           ]
+        }
+      }
+    },
+    "jwtLibraryProfileResolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "accepted_on",
+        "acceptance_ref",
+        "scope",
+        "profile_refs",
+        "required_package",
+        "rejected_packages",
+        "missing_or_invalid_input",
+        "runtime_admission"
+      ],
+      "properties": {
+        "id": {
+          "const": "resolution:pyjwt-jwt-library"
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "accepted_on": {
+          "const": "2026-10-31"
+        },
+        "acceptance_ref": {
+          "const": "specs/agent-platform/PRDs/002-policy-normalization-and-detector-lineage/PRD.md#requirement-29"
+        },
+        "scope": {
+          "const": "jwt-library-only"
+        },
+        "profile_refs": {
+          "const": [
+            "technology-profile.yml#security.authentication",
+            "technology-profile.yml#security.jwt_library"
+          ]
+        },
+        "required_package": {
+          "const": "pyjwt"
+        },
+        "rejected_packages": {
+          "const": [
+            "python-jose",
+            "jose"
+          ]
+        },
+        "missing_or_invalid_input": {
+          "const": "BLOCKED_INCOMPLETE"
+        },
+        "runtime_admission": {
+          "const": "not-admitted"
         }
       }
     }

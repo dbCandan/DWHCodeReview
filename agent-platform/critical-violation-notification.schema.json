@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "critical-violation-notification.schema.json",
+  "title": "CriticalViolationNotification",
+  "description": "Kritik ihlal bildiriminin SOME olay takip sistemine giden olayı (`kt-some-incident/v1`), günlük özeti (`kt-some-digest/v1`) ve toplayıcının değiştirilemez deposuna yazılan gönderim kaydı (`kt-notification-audit/v1`). Hiçbiri ileti metnini, maskelenmiş metni, eşleşen değeri, açık adresi, parolayı ya da anahtarı taşımaz.",
+  "oneOf": [
+    {"$ref": "#/$defs/incident"},
+    {"$ref": "#/$defs/digest"},
+    {"$ref": "#/$defs/audit"}
+  ],
+  "$defs": {
+    "notification_id": {"type": "string", "pattern": "^ntf-[0-9a-f]{32}$"},
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$"
+    },
+    "event_type": {
+      "enum": [
+        "prompt-blocked-secret",
+        "prompt-blocked-personal-data",
+        "review-hard-fail",
+        "review-security-veto",
+        "record-integrity-broken",
+        "event-storm"
+      ]
+    },
+    "reason": {"type": ["string", "null"], "pattern": "^[a-z0-9-]{1,64}$"},
+    "fingerprint": {
+      "type": ["string", "null"],
+      "pattern": "^adfp:v1:[a-z0-9][a-z0-9-]{0,31}:[0-9a-f]{64}$"
+    },
+    "incident": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "notification_id",
+        "event_type",
+        "detector_classes",
+        "basis_lines",
+        "policy_version",
+        "project_id",
+        "device_id",
+        "device_name",
+        "record_object",
+        "record_id",
+        "record_verification",
+        "occurred_at",
+        "received_at",
+        "occurrences",
+        "account_fingerprint",
+        "person_notification"
+      ],
+      "properties": {
+        "schema": {"const": "kt-some-incident/v1"},
+        "notification_id": {"$ref": "#/$defs/notification_id"},
+        "event_type": {"$ref": "#/$defs/event_type"},
+        "detector_classes": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 32,
+          "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9:._/-]{0,159}$"}
+        },
+        "basis_lines": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "^[^\\u0000-\\u001f\\u007f]+$"}
+        },
+        "policy_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "project_id": {"type": ["string", "null"], "pattern": "^project-[0-9a-f]{32}$"},
+        "device_id": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$"
+        },
+        "device_name": {"type": ["string", "null"], "maxLength": 64, "pattern": "^[^\\u0000-\\u001f\\u007f]*$"},
+        "record_object": {"type": ["string", "null"], "pattern": "^records/[0-9a-f]{64}\\.json$"},
+        "record_id": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$"},
+        "record_verification": {
+          "enum": [
+            null,
+            "verified",
+            "gap",
+            "mismatch",
+            "rollback",
+            "unanchored",
+            "chain-unavailable",
+            "epoch-restarted"
+          ]
+        },
+        "occurred_at": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/timestamp"}]},
+        "received_at": {"$ref": "#/$defs/timestamp"},
+        "occurrences": {"type": "integer", "minimum": 1},
+        "account_fingerprint": {"$ref": "#/$defs/fingerprint"},
+        "person_notification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reason"],
+          "properties": {
+            "status": {"enum": ["pending", "sent", "skipped", "failed", "not-applicable"]},
+            "reason": {"$ref": "#/$defs/reason"}
+          }
+        }
+      }
+    },
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "notification_id", "day", "policy_version", "entries"],
+      "properties": {
+        "schema": {"const": "kt-some-digest/v1"},
+        "notification_id": {"$ref": "#/$defs/notification_id"},
+        "day": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+        "policy_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "entries": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/incident"}}
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "at",
+        "notification_id",
+        "event_type",
+        "source_record",
+        "recipient_kind",
+        "channel",
+        "recipient",
+        "policy_version",
+        "attempt",
+        "outcome",
+        "reason",
+        "occurrences"
+      ],
+      "properties": {
+        "schema": {"const": "kt-notification-audit/v1"},
+        "at": {"$ref": "#/$defs/timestamp"},
+        "notification_id": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/notification_id"}]},
+        "event_type": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/event_type"}]},
+        "source_record": {"type": ["string", "null"], "pattern": "^records/[0-9a-f]{64}\\.json$"},
+        "recipient_kind": {"enum": ["some", "person"]},
+        "channel": {"enum": ["webhook", "email", "email-fallback", "digest", "none"]},
+        "recipient": {
+          "type": ["string", "null"],
+          "pattern": "^(?:adfp:v1:[a-z0-9][a-z0-9-]{0,31}:[0-9a-f]{64}|[^@\\s]\\*\\*\\*@[a-z0-9.-]{1,253}|some-endpoint|some-fallback-mailbox)$"
+        },
+        "policy_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "attempt": {"type": "integer", "minimum": 0},
+        "outcome": {
+          "enum": [
+            "skipped",
+            "merged",
+            "deferred-to-digest",
+            "endpoint-accepted",
+            "relay-accepted",
+            "retry-scheduled",
+            "failed",
+            "storm-started"
+          ]
+        },
+        "reason": {"$ref": "#/$defs/reason"},
+        "occurrences": {"type": ["integer", "null"], "minimum": 1}
+      }
+    }
+  }
+}

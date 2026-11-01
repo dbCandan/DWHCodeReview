@@ -34,6 +34,7 @@
     "capture_scope",
     "prompt_capture",
     "detector_counts",
+    "term_list",
     "raw_sensitive_content_recorded",
     "excluded_content_recorded",
     "model"
@@ -84,7 +85,7 @@
     "client_id": {"enum": ["claude-code", "codex", "github-copilot-vscode", "cursor"]},
     "event": {"enum": ["UserPromptSubmit", "beforeSubmitPrompt"]},
     "decision": {"enum": ["allow", "block"]},
-    "outcome": {"enum": ["clean", "matched", "input-invalid", "guard-error"]},
+    "outcome": {"enum": ["clean", "matched", "record-masked", "input-invalid", "guard-error"]},
     "policy_availability": {"enum": ["available", "unavailable"]},
     "policy_version": {
       "type": ["string", "null"],
@@ -111,13 +112,56 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["detector_id", "class", "count"],
+        "required": [
+          "detector_id",
+          "class",
+          "action",
+          "count",
+          "lines",
+          "lines_truncated",
+          "source_ref",
+          "legal_refs"
+        ],
         "properties": {
           "detector_id": {"type": "string", "pattern": "^detector:[a-z0-9-]+/[a-z0-9-]+$"},
           "class": {"$ref": "#/$defs/detectorClass"},
-          "count": {"type": "integer", "minimum": 1}
+          "action": {"enum": ["block", "record-mask"]},
+          "count": {"type": "integer", "minimum": 1},
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": {"type": "integer", "minimum": 1}
+          },
+          "lines_truncated": {"type": "boolean"},
+          "source_ref": {"type": "string", "minLength": 8},
+          "legal_refs": {
+            "const": [],
+            "description": "ISO ve KVKK eşlemesi. Veri koruma ve hukuk sahiplerinin onayladığı bir eşleme olmadığı için boştur; fabrika eşleme uydurmaz."
+          }
         }
       }
+    },
+    "term_list": {
+      "description": "Taranan istemde uygulanan terim listesi. Kurum listesi yoksa ya da okunamıyorsa politikadaki örnek liste uygulanır.",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["institution_list", "applied", "version", "sha256"],
+          "properties": {
+            "institution_list": {"enum": ["loaded", "missing", "invalid"]},
+            "applied": {"enum": ["institution", "sample"]},
+            "version": {"type": "string", "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$"},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          },
+          "if": {"properties": {"institution_list": {"const": "loaded"}}},
+          "then": {"properties": {"applied": {"const": "institution"}}},
+          "else": {"properties": {"applied": {"const": "sample"}}}
+        }
+      ]
     },
     "raw_sensitive_content_recorded": {"const": false},
     "excluded_content_recorded": {"const": false},
@@ -147,6 +191,7 @@
         "properties": {
           "decision": {"const": "allow"},
           "detector_counts": {"const": []},
+          "term_list": {"type": "object"},
           "prompt_capture": {
             "properties": {
               "mode": {"const": "clean-exact"},
@@ -165,7 +210,26 @@
       "then": {
         "properties": {
           "decision": {"const": "block"},
+          "detector_counts": {"contains": {"properties": {"action": {"const": "block"}}}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"outcome": {"const": "record-masked"}}},
+      "then": {
+        "properties": {
+          "decision": {"const": "allow"},
+          "detector_counts": {"items": {"properties": {"action": {"const": "record-mask"}}}},
+          "prompt_capture": {"properties": {"mode": {"const": "sensitive-span-redacted"}}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"outcome": {"enum": ["matched", "record-masked"]}}},
+      "then": {
+        "properties": {
           "detector_counts": {"minItems": 1},
+          "term_list": {"type": "object"},
           "prompt_capture": {
             "properties": {
               "mode": {
@@ -191,6 +255,7 @@
         "properties": {
           "decision": {"const": "block"},
           "detector_counts": {"const": []},
+          "term_list": {"type": "null"},
           "prompt_capture": {
             "properties": {
               "mode": {"const": "unavailable"},
@@ -218,7 +283,11 @@
         "tckn",
         "iban",
         "payment-card",
-        "phone-number"
+        "phone-number",
+        "customer-number",
+        "labelled-personal-field",
+        "internal-hostname",
+        "project-codename"
       ]
     },
     "promptCapture": {

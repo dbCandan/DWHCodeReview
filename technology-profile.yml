@@ -143,10 +143,62 @@ llm_orchestration:
   runtime_egress: forbidden
   runtime_model_download: forbidden
 
+corporate_mail:
+  status: allowed-with-accepted-prd
+  application_modes:
+    - separated-web
+  transport: smtp-to-corporate-relay
+  client: aiosmtplib-5
+  dependency_authority: app/backend/requirements-mail.in
+  activation: accepted-prd-includes-requirements-mail
+  starttls: required
+  certificate_validation: required
+  critical_delivery: transactional-outbox-in-postgresql
+  third_party_mail_services: forbidden
+  calendar_invitations_by_mail: forbidden
+  credentials: precreated-kubernetes-secret
+  egress: corporate-relay-through-project-egress-peer
+
+calendar_sync:
+  status: allowed-with-accepted-prd
+  application_modes:
+    - separated-web
+  server: exchange-server-on-premises
+  api: ews
+  client: exchangelib-5
+  dependency_authority: app/backend/requirements-calendar.in
+  activation: accepted-prd-includes-requirements-calendar
+  authentication: ntlm-service-account
+  direction: application-to-exchange
+  microsoft_graph_on_premises: forbidden
+  basic_authentication: forbidden
+  unscoped_impersonation: forbidden
+  certificate_validation: required
+  credentials: precreated-kubernetes-secret
+  egress: corporate-exchange-through-project-egress-peer
+
+corporate_directory:
+  status: allowed-with-accepted-prd
+  application_modes:
+    - separated-web
+  protocol: ldaps
+  client: ldap3-2
+  dependency_authority: app/backend/requirements-ldap.in
+  activation: accepted-prd-includes-requirements-ldap
+  starttls_or_plain_fallback: forbidden
+  certificate_validation: required
+  referral_chasing: forbidden
+  bind_retries: forbidden
+  stable_identity: object-guid
+  credentials: precreated-kubernetes-secret
+  addressing: hosted-corporate-environment
+  egress: corporate-directory-through-deploy-time-peer
+
 security:
   rsa_minimum_bits: 2048
   loopback_is_network_exposure: false
   authentication: jwt-access-token
+  jwt_library: pyjwt
   authorization: rbac-with-application-super-admin
   tenant_isolation: required
   secrets: runtime-environment-or-precreated-kubernetes-secret
@@ -158,7 +210,7 @@ observability:
     request_correlation: required
     sensitive_data: forbidden
   monitoring:
-    collector: opentelemetry-collector
+    collector: grafana-alloy
     metrics_store: prometheus
     trace_store: tempo
     log_store: loki

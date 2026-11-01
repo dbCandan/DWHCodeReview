@@ -1,7 +1,7 @@
 schema_version: "1.0"
 kind: DeterministicDecisionExplanationTemplateCatalog
 catalog_id: policy:governed-review-decision-explanations
-catalog_version: 1.0.0
+catalog_version: 1.1.0
 locale: tr
 claim_boundary:
   evidence_tier: L1
@@ -109,3 +109,53 @@ templates:
       template_id: decision-explanation:run-evidence-incomplete
       template_version: 1.0.0
       text: "Karar {decision}: zorunlu çalışma kanıtı eksik, başarısız veya bütünlük doğrulamasını geçemedi. Gerekçe: {reason_code}."
+# One finding's reason and basis lines. `finalize-review` writes them for every finding and the
+# prompt hook writes them, folded to ASCII, for every matched detector. Standards, numbers and
+# mapping states are owned by `agent-platform/standard-reference.schema.json`; this catalog owns
+# only the words people read.
+finding_templates:
+  reason:
+    template_id: finding-explanation:reason
+    template_version: 1.0.0
+    text: "Neden: {reason}"
+  basis:
+    template_id: finding-explanation:basis
+    template_version: 1.0.0
+    text: "Dayanak: {references}. Durum: {status}."
+  basis_unmapped:
+    template_id: finding-explanation:basis-unmapped
+    template_version: 1.0.0
+    text: "Dayanak: ISO/KVKK dayanağı henüz eşlenmedi."
+  source_stated:
+    template_id: finding-explanation:source-stated
+    template_version: 1.0.0
+    text: "Kaynakta geçen, doğrulanmamış başvuru: {references}."
+  institutional:
+    template_id: finding-explanation:institutional
+    template_version: 1.0.0
+    text: "Kurum politikası: {references}."
+finding_labels:
+  statuses:
+    "baseline-unverified": "temel seviye eşleme; bilgi güvenliği ve hukuk birimleri henüz doğrulamadı, onaylı hukuki görüş değildir"
+    "unit-verified": "ilgili birim doğruladı"
+  formats:
+    "ISO-IEC-27001": "ISO/IEC 27001:{version} {control} ({title})"
+    "KVKK-6698": "KVKK m.{control} ({title}; 6698 sayılı Kanun, {version} metni)"
+    "CWE": "{control}"
+    "OWASP-TOP-10": "OWASP Top 10 {control}"
+    "PCI-DSS": "PCI DSS (kaynak madde numarası vermiyor)"
+    "SLSA": "SLSA (kaynak seviye belirtmiyor)"
+    "KT-AGENT-POLICY": "{control} (kurum Agent politikası {version})"
+  titles:
+    "ISO-IEC-27001 A.5.17": "Authentication information"
+    "ISO-IEC-27001 A.5.21": "Managing information security in the ICT supply chain"
+    "ISO-IEC-27001 A.5.34": "Privacy and protection of PII"
+    "ISO-IEC-27001 A.8.2": "Privileged access rights"
+    "ISO-IEC-27001 A.8.5": "Secure authentication"
+    "ISO-IEC-27001 A.8.9": "Configuration management"
+    "ISO-IEC-27001 A.8.11": "Data masking"
+    "ISO-IEC-27001 A.8.15": "Logging"
+    "ISO-IEC-27001 A.8.24": "Use of cryptography"
+    "ISO-IEC-27001 A.8.28": "Secure coding"
+    "KVKK-6698 6": "Özel nitelikli kişisel verilerin işlenme şartları"
+    "KVKK-6698 12": "Veri güvenliğine ilişkin yükümlülükler"

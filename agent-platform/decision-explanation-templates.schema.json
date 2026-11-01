@@ -11,13 +11,15 @@
     "catalog_version",
     "locale",
     "claim_boundary",
-    "templates"
+    "templates",
+    "finding_templates",
+    "finding_labels"
   ],
   "properties": {
     "schema_version": {"const": "1.0"},
     "kind": {"const": "DeterministicDecisionExplanationTemplateCatalog"},
     "catalog_id": {"const": "policy:governed-review-decision-explanations"},
-    "catalog_version": {"const": "1.0.0"},
+    "catalog_version": {"const": "1.1.0"},
     "locale": {"const": "tr"},
     "claim_boundary": {"$ref": "#/$defs/claimBoundary"},
     "templates": {
@@ -98,9 +100,88 @@
           }
         }
       }
+    },
+    "finding_templates": {
+      "description": "Bir bulgunun `Neden:` ve `Dayanak:` satırlarının şablonları.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "basis", "basis_unmapped", "source_stated", "institutional"],
+      "properties": {
+        "reason": {"$ref": "#/$defs/findingTemplate"},
+        "basis": {"$ref": "#/$defs/findingTemplate"},
+        "basis_unmapped": {"$ref": "#/$defs/findingTemplate"},
+        "source_stated": {"$ref": "#/$defs/findingTemplate"},
+        "institutional": {"$ref": "#/$defs/findingTemplate"}
+      }
+    },
+    "finding_labels": {
+      "description": "Kullanıcıya görünen durum etiketleri, başvuru biçimleri ve kontrol başlıkları. Standartları, numaraları ve bağ durumlarını ortak standart başvurusu tanımı belirler; ISO kontrolünün yalnız kısa başlığı yazılır.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statuses", "formats", "titles"],
+      "properties": {
+        "statuses": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["baseline-unverified", "unit-verified"],
+          "properties": {
+            "baseline-unverified": {"$ref": "#/$defs/label"},
+            "unit-verified": {"$ref": "#/$defs/label"}
+          }
+        },
+        "formats": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ISO-IEC-27001",
+            "KVKK-6698",
+            "CWE",
+            "OWASP-TOP-10",
+            "PCI-DSS",
+            "SLSA",
+            "KT-AGENT-POLICY"
+          ],
+          "properties": {
+            "ISO-IEC-27001": {"$ref": "#/$defs/label"},
+            "KVKK-6698": {"$ref": "#/$defs/label"},
+            "CWE": {"$ref": "#/$defs/label"},
+            "OWASP-TOP-10": {"$ref": "#/$defs/label"},
+            "PCI-DSS": {"$ref": "#/$defs/label"},
+            "SLSA": {"$ref": "#/$defs/label"},
+            "KT-AGENT-POLICY": {"$ref": "#/$defs/label"}
+          }
+        },
+        "titles": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^(?:ISO-IEC-27001 A\\.[5-8]\\.[1-9][0-9]?|KVKK-6698 [1-9][0-9]?)$"
+          },
+          "additionalProperties": {"$ref": "#/$defs/label"}
+        }
+      }
     }
   },
   "$defs": {
+    "findingTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["template_id", "template_version", "text"],
+      "properties": {
+        "template_id": {
+          "type": "string",
+          "pattern": "^finding-explanation:[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+        },
+        "template_version": {"const": "1.0.0"},
+        "text": {"type": "string", "minLength": 1, "maxLength": 200}
+      }
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^\\S(?:[^\\r\\n]*\\S)?$"
+    },
     "claimBoundary": {
       "type": "object",
       "additionalProperties": false,

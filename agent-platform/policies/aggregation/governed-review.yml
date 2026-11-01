@@ -132,11 +132,10 @@ finding_classification:
       minimum_score_basis_points: 7500
       maximum_score_basis_points: 10000
       detector_score_basis_points: 7500
-  # Bu sürümde exact finding/report/control/policy bağına sahip, dışarıdan çözülebilen ve kabul
-  # edilmiş bir anlamsal değerlendirme yapıtı yoktur. Rapor içi evaluator kimliği/özet öz beyanı
-  # puan otoritesi değildir; böyle bulgular BLOCKED_INCOMPLETE sonucuna kapanır.
-  semantic_evaluators: []
-  unclassified_result: BLOCKED_INCOMPLETE
+  # Yönetilen incelemede uzmanın anlamsal bulgusu, önem derecesinin detector_score_basis_points
+  # puanıyla ajan puanına ve güvenlik vetosuna girer. Kural tabanlı taramanın kod bulgusu da aynı
+  # bantla girer; HARD-FAIL yalnız o taramadan gelir. Önem derecesi ile puanı uyuşmayan bulgu
+  # mismatch_result sonucuna kapanır.
   mismatch_result: BLOCKED_INCOMPLETE
 
 thresholds:

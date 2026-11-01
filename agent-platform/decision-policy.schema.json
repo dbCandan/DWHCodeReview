@@ -282,8 +282,6 @@
         "calibration_status",
         "runtime_admission",
         "severity_bands",
-        "semantic_evaluators",
-        "unclassified_result",
         "mismatch_result"
       ],
       "properties": {
@@ -304,14 +302,6 @@
           "minItems": 5,
           "maxItems": 5
         },
-        "semantic_evaluators": {
-          "type": "array",
-          "minItems": 0,
-          "maxItems": 16,
-          "uniqueItems": true,
-          "items": {"$ref": "#/$defs/semanticEvaluator"}
-        },
-        "unclassified_result": {"const": "BLOCKED_INCOMPLETE"},
         "mismatch_result": {"const": "BLOCKED_INCOMPLETE"}
       }
     },
@@ -362,27 +352,6 @@
         {"$ref": "#/$defs/severityBandBase"},
         {"properties": {"severity": {"const": "critical"}, "label_tr": {"const": "Kritik"}}}
       ]
-    },
-    "semanticEvaluator": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "producer_id",
-        "producer_version",
-        "evidence_kind",
-        "deterministic",
-        "score_authority"
-      ],
-      "properties": {
-        "producer_id": {
-          "type": "string",
-          "pattern": "^(?:gate|tool|validator):[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
-        },
-        "producer_version": {"$ref": "#/$defs/semver"},
-        "evidence_kind": {"const": "policy-evaluation"},
-        "deterministic": {"const": true},
-        "score_authority": {"const": "evaluator-output-within-policy-band"}
-      }
     },
     "securityCriticalVeto": {
       "type": "object",

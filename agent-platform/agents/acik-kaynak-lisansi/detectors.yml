@@ -1,8 +1,8 @@
-schema_version: "1.1"
+schema_version: "1.6"
 kind: DeterministicDetectorPack
 metadata:
   id: detector-pack:acik-kaynak-lisansi
-  version: 1.2.0
+  version: 1.4.0
   owner: team:open-source-governance
   lifecycle: draft
 agent_ref: agent:acik-kaynak-lisansi
@@ -15,8 +15,8 @@ source_lineage:
   runtime_admission: not-admitted
   crosswalk_ref: governance-crosswalk:desktop-agents-v1
 execution_boundary:
-  mode: specification-only
-  executor_ref: null
+  mode: governed-review-scan
+  executor_ref: executor:governance-client/deterministic-scan
   implementation_status: partially-implemented
   projection_status: not-projectable
   runtime_admission: not-admitted
@@ -28,8 +28,14 @@ detectors:
     control_refs:
       - control:LICENSE-102
     severity: high
+    reason: "Paket onaylı olmayan bir kaynaktan doğrudan indirilip kuruluyor. Onaysız kaynak, tedarik zinciri saldırısına açık kapı bırakır."
+    scan_group: adjudication
     evidence_kind: deterministic-check
-    standard_refs: []
+    standard_refs:
+      - standard_id: ISO-IEC-27001
+        control_id: A.5.21
+        version: "2022"
+        mapping_status: baseline-unverified
     implementation:
       kind: regex
       engine: python-re
@@ -94,6 +100,34 @@ detectors:
     projection_status: not-projectable
     runtime_admission: not-admitted
     lifecycle: draft
+  - id: detector:acik-kaynak-lisansi/jwt-library-profile
+    source_refs:
+      - governance-source:desktop-agents/oss-license/allowlist.yaml#allowlist/approved-package/python-jose
+    control_refs:
+      - control:LICENSE-102
+    severity: high
+    evidence_kind: deterministic-check
+    standard_refs: []
+    implementation:
+      kind: regex
+      engine: python-re
+      pattern: "^\\s*[\"']?(?i:python[-_.]jose)(?:\\[[^\\]\\n]*\\])?\\s*(?:[<>=!~;@,\"']|$)|^\\s*jose(?:\\[[^\\]\\n]*\\])?\\s*(?:[<>=!~;@]|$)|^\\s*(?:from\\s+jose(?:\\.\\w+)*\\s+import\\b|import\\s+jose\\b)"
+      flags:
+        - MULTILINE
+      resolution_ref: resolution:pyjwt-jwt-library
+      profile_ref: technology-profile.yml#security.jwt_library
+      required_package: pyjwt
+      rejected_packages:
+        - python-jose
+        - jose
+      rejected_imports:
+        - jose
+      missing_or_invalid_input: BLOCKED_INCOMPLETE
+    limitations: Kabul edilmiş profil önceliği kaynak izin listesindeki `python-jose` onayının yerini alır; kaynak anlık görüntüsü değişmez. Desen bağımlılık bildirimini ve `jose` içe aktarmasını satır başında arar. Kalibrasyon tamamlanmamıştır; kaynak kesin başarısızlık değeri bildirmediği için kod taramasında çalışmaz, uzman ajan uygular.
+    implementation_status: calibration-pending
+    projection_status: not-projectable
+    runtime_admission: not-admitted
+    lifecycle: draft
 decision_metadata:
   authoritative_hard_fail_detectors:
     - detector:acik-kaynak-lisansi/license-url-001
@@ -101,7 +135,8 @@ decision_metadata:
     - detector:acik-kaynak-lisansi/license-url-002
     - detector:acik-kaynak-lisansi/license-003
     - detector:acik-kaynak-lisansi/license-005
-  hard_fail_not_declared_detectors: []
+  hard_fail_not_declared_detectors:
+    - detector:acik-kaynak-lisansi/jwt-library-profile
   unresolved_hard_fail_detectors: []
   unresolved_decision_conflicts:
     - detector_id: detector:acik-kaynak-lisansi/license-003

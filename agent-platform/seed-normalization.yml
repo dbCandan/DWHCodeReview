@@ -2,8 +2,8 @@ schema_version: "1.12"
 kind: GovernanceNormalizationCrosswalk
 metadata:
   id: governance-crosswalk:desktop-agents-v1
-  version: 1.19.0
-  as_of: "2026-10-08"
+  version: 1.21.0
+  as_of: "2026-11-01"
   owner: team:ai-governance
   lifecycle: draft
 claim_boundary:
@@ -1567,6 +1567,7 @@ entries:
     source_conflict_refs:
       - source-conflict:nextjs-only-and-react-vite-profile
       - source-conflict:typescript-allowed-and-profile-roles
+      - source-conflict:python-jose-allowed-and-pyjwt-profile
     rationale: Talimat belgesinin görevleri, sorumlulukları, sınırları, ölçütleri ve hata davranışı doğal Türkçe kanonik talimatlara eksiksiz aktarılır; yetki genişleten kaynak iddiaları güvenli kapanan yerel sınırlarla korunur.
   - source_ref: governance-source:desktop-agents/oss-license/policy.yaml#setting/weights
     source_kind: weights
@@ -1944,13 +1945,15 @@ entries:
   - source_ref: governance-source:desktop-agents/oss-license/allowlist.yaml#allowlist/approved-package/python-jose
     source_kind: allowlist-entry
     source_authority: governance-authoritative
-    implementation_status: implementation-pending
+    implementation_status: calibration-pending
     projection_status: not-projectable
     runtime_admission: not-admitted
     target_refs:
       - control:LICENSE-102
-    source_conflict_refs: []
-    rationale: Yetkin kaynak öğesi kanonik politika kontrolüne eşlenir; teknik uygulaması açıkça beklemede kalır.
+      - detector:acik-kaynak-lisansi/jwt-library-profile
+    source_conflict_refs:
+      - source-conflict:python-jose-allowed-and-pyjwt-profile
+    rationale: Kaynaktaki `python-jose` onayı soy zincirinde korunur ama onay olarak uygulanmaz; paket bakımsız kaldı, kritik açığı düzeltilmedi ve teknoloji profili JWT için yalnız PyJWT'yi tanır. Algılayıcı bu paketi ve içe aktarmasını profil ihlali olarak işaretler.
   - source_ref: governance-source:desktop-agents/oss-license/allowlist.yaml#allowlist/approved-package/passlib
     source_kind: allowlist-entry
     source_authority: governance-authoritative
@@ -2785,6 +2788,28 @@ source_conflicts:
         - technology-profile.yml#architecture.server_side_rendering
       missing_or_invalid_input: BLOCKED_INCOMPLETE
       runtime_admission: not-admitted
+  - id: source-conflict:python-jose-allowed-and-pyjwt-profile
+    source_refs:
+      - governance-source:desktop-agents/oss-license/agent.md#instruction/document
+      - governance-source:desktop-agents/oss-license/allowlist.yaml#allowlist/approved-package/python-jose
+    description: Tarihsel OSS talimatı izin listesine bağlıdır ve liste JWT için `python-jose` paketini onaylı sayar; paket bakımsız kaldı ve kritik güvenlik açığı düzeltilmedi. Etkin profil JWT için yalnız PyJWT'yi tanır; açık sahip kararıyla `python-jose` onay sayılmaz, profil ihlalidir.
+    resolution_status: resolved-by-technology-profile
+    authority_disposition: source-preserved-explicit-profile-precedence
+    resolution:
+      id: resolution:pyjwt-jwt-library
+      version: 1.0.0
+      accepted_on: "2026-10-31"
+      acceptance_ref: specs/agent-platform/PRDs/002-policy-normalization-and-detector-lineage/PRD.md#requirement-29
+      scope: jwt-library-only
+      profile_refs:
+        - technology-profile.yml#security.authentication
+        - technology-profile.yml#security.jwt_library
+      required_package: pyjwt
+      rejected_packages:
+        - python-jose
+        - jose
+      missing_or_invalid_input: BLOCKED_INCOMPLETE
+      runtime_admission: not-admitted
 
 package_acceptances:
 - id: package-acceptance:runtime-six-20260917
@@ -2800,7 +2825,7 @@ package_acceptances:
     version: 2.15.0
     license: MIT
   - name: sqlalchemy
-    version: 2.0.52
+    version: 2.1.1
     license: MIT
   - name: asyncpg
     version: 0.31.0
@@ -2824,7 +2849,7 @@ package_acceptances:
     version: 7.1.0
     license: MIT
   - name: black
-    version: 26.5.1
+    version: 26.10.1
     license: MIT
   - name: isort
     version: 9.0.1
@@ -2839,10 +2864,10 @@ package_acceptances:
     version: 26.2.1
     license: MIT
   - name: setuptools
-    version: 84.0.0
+    version: 84.1.0
     license: MIT
   - name: ruff
-    version: 0.16.6
+    version: 0.16.9
     license: MIT
 
 dependency_acceptance_inheritance:

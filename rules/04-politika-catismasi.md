@@ -93,9 +93,10 @@ geçersiz kılabilen `AGENTS.override.md` ve `CLAUDE.local.md`; istemci yüzeyle
 `.pre-commit-config.yaml`, `.gitleaks.toml`, `scripts/check-governance-drift.py` ve
 `scripts/check-dependency-admission.py`.
 
-Bu yüzey yalnız kullanıcının açıkça başlattığı kanonik teslimle değişir: `/kt-guncelle`,
-`/kt-yansit`, MCP proje iskeleti eşitlemesi veya yönetişim uzlaştırması. Teslim edilen baytları tam
-dosya olarak ve kısaltmadan uygula. Ürün işi, bulgu düzeltmesi, testi geçirme, hızlandırma veya
+Bu yüzey yalnız kanonik teslimle değişir: kullanıcının açıkça başlattığı `/kt-guncelle`,
+`/kt-yansit`, MCP proje iskeleti eşitlemesi veya yönetişim uzlaştırması ya da periyodik yönetişim
+eşitlemesinin sapan dosyayı `.kt-scaffold/manifest.json` kaydındaki baytlarla geri yazması. Teslim
+edilen baytları tam dosya olarak ve kısaltmadan uygula. Ürün işi, bulgu düzeltmesi, testi geçirme, hızlandırma veya
 kullanıcı isteği gerekçesiyle kontrol, detector, eşik, ağırlık, kural, kanca, izin, manifest veya
 kilit özeti, CI kapısı ya da makbuzu silme, zayıflatma, yeniden adlandırma, dosya izinlerini değiştirme
 veya devre dışı bırakma. Bulgu, kontrol kaldırılarak çözülmez; bulguyu doğuran uygulama kodu düzeltilir.
@@ -121,6 +122,23 @@ denetimidir. Kanca yalnız istemci projenin kanca dosyasını yükleyip güvendi
 yorumlayıcı yazımı, harici düzenleyici ve insan düzenlemesi kanca kapsamı dışındadır; sapmayı
 `scripts/check-governance-drift.py`, commit kapısı ve CI saptar. Bu yalnız `conditional-native-guard`
 iddiasıdır; değişmezlik, yönetici uygulatımı veya üretim kabulü değildir.
+
+## Kurumun durdurduğu çalışma
+
+Bilgi güvenliği ekibi tek bir bilgisayarda yapay zekâ asistanıyla çalışmayı durdurabilir. İstem,
+komut veya dosya kancası `KT_DEVICE_STOPPED` ya da `KT_DEVICE_STATE_UNVERIFIED` ile başlayan bir
+retle dönerse ya da `governance_client.py` komutu `device-stopped` veya `device-state-unverified`
+hatası verirse işi hemen bırak. Durdurmayı aşmaya çalışma: başka komut, araç, kabuk, yorumlayıcı,
+klasör veya oturum kökü deneme; ortak yönetişim kökündeki eşitleme dosyalarını değiştirme veya
+silme; commit kapısını `--no-verify` ile atlama. Kullanıcıya `02-iletisim-tarzi` kuralındaki sade
+dille yalnız şunu söyle: bu bilgisayarda çalışma kurum tarafından durduruldu; bilgi için bilgi
+güvenliği ekibine başvurmalı. Mekanizmayı, dosya yolunu veya gerekçe kodunu anlatma. Durdurmayı
+yalnız kurum kaldırır.
+
+Periyodik yönetişim eşitlemesi (`.kt-scaffold/hooks/authority_sync.py`) yönetişim yüzeyinde sapan
+dosyayı oturum açılışında ve 5 dakikada bir, yalnız kaydedilmiş baytlarla geri yazar; yeni otorite
+sürümünü kendiliğinden uygulamaz, yalnız güncellemenin beklediğini bildirir. Eşitlemeyi durdurma,
+görevini silme veya geri yazılan dosyayı yeniden değiştirme.
 
 ## Düzeltme önerisi ve uygulama sınırı
 
@@ -158,3 +176,12 @@ getirebileceği için kullanılmaz. Komut yüzeye yeni içerik yazmaz, yalnız k
 getirir; bu yüzden yukarıdaki sınırla çelişmez. Doğru içerik commit geçmişinde yoksa dosyayı elle
 yazma; proje kullanıcının başlattığı MCP proje iskeleti eşitlemesi veya `kt-iskelet guncelle` ile
 güncellenir.
+
+Sapma denetimi veya commit kapısı `LOCAL_CLIENT_OVERRIDE` ya da `LOCAL_CLIENT_OVERRIDE_WARNING` ile
+başlayan bir ileti verirse ya da `governance_client.py review-start` `local-client-override` hatası
+dönerse sorun yönetilen bir dosyada değil, asistanın bu projedeki yerel ayar veya talimat dosyasındadır
+(ör. `.claude/settings.local.json`, `CLAUDE.local.md`, `AGENTS.override.md`, alt klasördeki
+`AGENTS.md`); `restore` komutu bunu düzeltmez. Bu dosyayı kendin silme, düzenleme veya taşıma;
+iletideki listeyi kullanıcıya `02-iletisim-tarzi` kuralındaki sade dille aktar ve kaldırmasını iste.
+`LOCAL_CLIENT_OVERRIDE` iletisinden sonra commit veya yönetilen inceleme deneme. Uyarı iletisinde işe
+devam edebilirsin; uyarıyı kullanıcıya bildir.

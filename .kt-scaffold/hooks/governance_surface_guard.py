@@ -15,6 +15,7 @@ commit gate and CI.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -460,6 +461,32 @@ def decide(event: dict[str, Any], root: str, client: str = "claude-code") -> tup
     return None
 
 
+def _record_location() -> Any:
+    """The shared governance root; ``None`` selects the fixed operating-system location."""
+    return None
+
+
+def _managed_preferences() -> Any:
+    """Jamf's managed preference file; ``None`` selects the fixed system path."""
+    return None
+
+
+def _device_refusal(hook: str, client: str) -> str | None:
+    """The fixed refusal when this device is stopped; read locally before any other check."""
+    path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "governance_records.py")
+    try:
+        records = runpy.run_path(path)
+        decision, _ = records["device_gate"](
+            location=_record_location(), managed_preferences=_managed_preferences()
+        )
+    except Exception:
+        return None
+    if decision not in {"stop", "unverified"}:
+        return None
+    records["record_refusal"](hook, decision, client=client, location=_record_location())
+    return str(records["gate_message"](decision, marker=True))
+
+
 def _message(code: str, relative: str | None, client: str) -> str:
     if code == "GOVERNANCE_RECORD_CLOSED":
         return (
@@ -516,6 +543,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     client = arguments.client
+    refusal = _device_refusal("file", client)
+    if refusal is not None:
+        with contextlib.suppress(OSError):
+            sys.stdin.buffer.read(MAX_EVENT_BYTES + 1)
+        print(refusal, file=sys.stderr)
+        return 2
     try:
         root = _project_root()
         decision = decide(_event(), root, client)

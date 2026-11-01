@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import runpy
+import sys
 from pathlib import Path
 from typing import NoReturn
 
@@ -21,6 +23,7 @@ PROMPT_INGRESS_ASSETS = {
     "agent-platform/llm-call-event.schema.json",
     ".kt-scaffold/hooks/governance_client.py",
     ".kt-scaffold/hooks/governance_records.py",
+    ".kt-scaffold/hooks/governance_identity.py",
     ".kt-scaffold/hooks/python_environment.py",
     ".kt-scaffold/hooks/llm_call_events.py",
     ".kt-scaffold/hooks/llm_call_audit_hook.py",
@@ -33,7 +36,9 @@ PROMPT_INGRESS_ASSETS = {
 LOCAL_GOVERNANCE_GUARD_ASSETS = {
     ".github/workflows/governance-drift.yml",
     ".kt-scaffold/hooks/agentic_review_receipt_guard.py",
+    ".kt-scaffold/hooks/authority_sync.py",
     ".kt-scaffold/hooks/codex_hook_trust.py",
+    ".kt-scaffold/hooks/governance_forwarder.py",
     ".kt-scaffold/hooks/commit_governance_guard.py",
     ".kt-scaffold/hooks/initial_scaffold_commit.py",
     ".kt-scaffold/hooks/governance_drift_feedback.py",
@@ -45,6 +50,7 @@ LOCAL_GOVERNANCE_GUARD_ASSETS = {
     "agent-platform/agentic-governed-review-audit-event.schema.json",
     "agent-platform/agentic-governed-review-decision-evidence.schema.json",
     "agent-platform/agentic-governed-review-decision.schema.json",
+    "agent-platform/agentic-governed-review-deterministic-scan.schema.json",
     "agent-platform/agentic-governed-review-evaluator-policy.schema.json",
     "agent-platform/agentic-governed-review-receipt.schema.json",
     "agent-platform/policies/aggregation/governed-review-agentic-evaluation.yml",
@@ -54,9 +60,36 @@ UNTRUSTED_CONTENT_ASSETS = {
     "agent-platform/indirect-injection-eval.schema.json",
     "agent-platform/untrusted-content-envelope.schema.json",
 }
+# A file planted under one of these directories by a shell command, bypassing the native
+# file tools, is drift even when every recorded managed file still matches its digest.
+GOVERNED_DIRECTORIES = (
+    ".agents",
+    ".claude/agents",
+    ".claude/commands",
+    ".claude/rules",
+    ".claude/skills",
+    ".codex",
+    ".cursor",
+    ".github/agents",
+    ".github/hooks",
+    ".github/instructions",
+    ".github/skills",
+    ".kt-scaffold/agent-activation",
+    ".kt-scaffold/agent-projections",
+    ".kt-scaffold/hooks",
+    "agent-evals",
+    "agent-platform",
+    "rules",
+)
 ACTIVATION_STATE_ROOT = Path(".kt-scaffold/agent-activation")
 EXPECTED_RENDERER_VERSION = "0.4.0"
 RESTORE_COMMAND = "python3 .kt-scaffold/hooks/governance_client.py restore"
+GOVERNANCE_RECORDS = ROOT / ".kt-scaffold" / "hooks" / "governance_records.py"
+# A local client override stops the commit gate with its own exit code and its own guidance.
+LOCAL_OVERRIDE_EXIT = 3
+# The project's CI passes this flag: there a committed override stops on any device.  Only the
+# flag selects it, so no environment variable can relax the managed-device decision.
+CI_FLAG = "--ci"
 AGENT_IDS = {
     "acik-kaynak-lisansi",
     "bilgi-guvenligi",
@@ -174,6 +207,89 @@ def scaffold_managed_digests() -> dict[str, str]:
     ):
         raise SystemExit("scaffold ownership manifesti bozuk")
     return managed
+
+
+def scaffold_seed_paths() -> set[str]:
+    """Application-seed paths the generator records; these are project-owned, not drift."""
+    manifest = safe_project_path(SCAFFOLD_MANIFEST.relative_to(ROOT), "scaffold manifesti")
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    seed = payload.get("application_seed") if isinstance(payload, dict) else None
+    return set(seed) if isinstance(seed, dict) else set()
+
+
+def drifted_unmanaged_extra(relative: str) -> NoReturn:
+    """Stop on a file added under a governed directory that the generator does not own."""
+
+    raise SystemExit(
+        f"yönetişim yüzeyine eklenen beklenmeyen dosya: {relative}\n"
+        "Bu dosya üreticinin yönettiği bir dosya değil; yönetişim yüzeyine kabuk komutuyla "
+        "eklenmiş olabilir. Dosyayı kaldır (silmek için dosya aracını kullanma, kabuktan sil) "
+        "ya da projeyi fabrika güncellemesiyle yeniden üret: asistanın proje fabrikası "
+        "bağlantısındaki (MCP) proje_iskelesini_esitle aracı veya kt-iskelet guncelle komutu. "
+        "Kontrolü silerek bulgu kapatılmaz."
+    )
+
+
+def verify_no_unmanaged_governed_files() -> None:
+    """Flag any extra file a shell added under a governed directory as drift.
+
+    The managed-file checks only compare files the generator recorded, so a file planted
+    beside them — a fake skill, an override policy, a bypass hook — would otherwise pass
+    unseen.  Every regular file under a governed directory must be a generator-managed path
+    or a recorded application-seed path; a symlink or special file there is never expected.
+    """
+    managed = scaffold_managed_digests()
+    seed = scaffold_seed_paths()
+    for relative_root in GOVERNED_DIRECTORIES:
+        root_path = ROOT / relative_root
+        if not root_path.exists():
+            continue
+        if root_path.is_symlink() or not root_path.is_dir():
+            drifted("yönetilen dizin beklenen biçimde değil", relative_root)
+        for path in sorted(root_path.rglob("*"), key=lambda item: item.as_posix()):
+            relative = path.relative_to(ROOT).as_posix()
+            if path.is_symlink():
+                drifted("yönetilen dizinde beklenmeyen sembolik bağlantı var", relative)
+            if path.is_dir():
+                continue
+            if not path.is_file():
+                drifted("yönetilen dizinde beklenmeyen özel dosya var", relative)
+            if relative not in managed and relative not in seed:
+                drifted_unmanaged_extra(relative)
+
+
+def _managed_preferences() -> Path | None:
+    """Jamf's managed preference file; ``None`` selects the fixed system path."""
+    return None
+
+
+def verify_local_client_overrides(*, ci: bool) -> int:
+    """Stop on a managed device or in CI, and warn elsewhere, on a local client governance bypass.
+
+    A client-local settings or instruction file is not a generator-managed file, so the digest
+    checks above never see it; it can still switch the project's hooks off or add rules.  The
+    detection and the managed-device test are the shared governance runtime's, whose bytes the
+    prompt-ingress asset check has already matched against the manifest.  CI mode only adds a
+    stop: a managed device stops either way.
+    """
+    records = runpy.run_path(str(GOVERNANCE_RECORDS))
+    findings = records["local_client_overrides"](ROOT)
+    if not findings:
+        return 0
+    blocking = bool(records["managed_device"](_managed_preferences())) or ci
+    print(
+        records["local_override_message"](findings, blocking=blocking, ci=ci), file=sys.stderr
+    )
+    return LOCAL_OVERRIDE_EXIT if blocking else 0
+
+
+def ci_mode(arguments: list[str]) -> bool:
+    """Read the only accepted argument; anything else is a usage error, never a silent default."""
+    if not arguments:
+        return False
+    if arguments == [CI_FLAG]:
+        return True
+    raise SystemExit(f"kullanım: check-governance-drift.py [{CI_FLAG}]")
 
 
 def application_mode() -> str:
@@ -452,6 +568,7 @@ def verify_agent_projections() -> tuple[int, set[str]]:
 
 
 def main() -> int:
+    ci = ci_mode(sys.argv[1:])
     lock_path = safe_project_path(LOCK.relative_to(ROOT), "yönetişim kilidi")
     if not lock_path.is_file():
         raise SystemExit("yönetişim kilidi eksik veya güvenli değil")
@@ -470,6 +587,7 @@ def main() -> int:
     verify_prompt_ingress_assets()
     verify_local_governance_guard_assets()
     verify_untrusted_content_assets()
+    verify_no_unmanaged_governed_files()
     expected_files = expected_governance_files(selected_clients)
     if set(files) != expected_files:
         missing = sorted(expected_files - set(files))
@@ -491,6 +609,9 @@ def main() -> int:
             raise SystemExit(
                 f"üretilmiş yönetişim dosyası scaffold tarafından sahiplenilmiyor: {relative}"
             )
+    local_override = verify_local_client_overrides(ci=ci)
+    if local_override:
+        return local_override
     print(f"yönetişim izdüşümleri güncel: {len(files)} dosya")
     print(
         f"ajan izdüşümleri güncel: {agent_count} etkisiz kopya ve "

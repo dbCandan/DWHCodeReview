@@ -69,18 +69,35 @@ Listede bulunan paket de güvenlik açığı, bakım, lisans veya zararlı içer
   Vite 8 seçer; `frontend.rendering` istemci taraflı SPA'dır. `architecture.nextjs`
   ve `architecture.server_side_rendering` yasaklarını koru. Next.js'e geçiş önerme.
 - `react`, `react-dom`, `vite` tam sabitlemeleri ve manifest/kilit kimlik-sürüm eşliği
-  profil major serilerine uymalıdır. Mevcut sabitlemeler React/React DOM 19.2.8 ve
-  Vite 8.2.2 olarak kalır. Alias veya kilit girdisiyle Next.js eklenmesi uyum değildir.
+  profil major serilerine uymalıdır. Mevcut sabitlemeler React/React DOM 19.3.0 ve
+  Vite 8.2.4 olarak kalır. Alias veya kilit girdisiyle Next.js eklenmesi uyum değildir.
 - Profil/otorite özeti, çözüm kaydı veya aday bağı eksik/geçersizse `BLOCKED_INCOMPLETE`
   bildir. Yalnız eski Next.js-only metni nedeniyle uygun React/Vite yığınını reddetme.
   Bu çözüm paket bazlı lisans, bağımlılık kabulü veya güvenlik incelemesinin yerine geçmez;
   Streamlit istisnasını genişletmez ve diğer kaynak çelişkilerini çözmez.
 
+## JWT kütüphanesi için profil önceliği
+
+- `resolution:pyjwt-jwt-library` uyarınca JWT'yi (oturum jetonunu) imzalayan ve doğrulayan tek
+  kütüphane, aynı adayın `technology-profile.yml#security.jwt_library` alanındaki PyJWT'dir
+  (`pyjwt`); kimlik doğrulama biçimi `technology-profile.yml#security.authentication` alanından
+  alınır.
+- Tarihsel izin listesi `python-jose` paketini onaylı sayar; bu onayı uygulama. `python-jose`
+  bakımsız kaldı ve kritik güvenlik açığı düzeltilmedi. `python-jose` veya `jose` bağımlılığı
+  (`requirements*.in`, `requirements*.txt`, `pyproject.toml`) ile `from jose import ...` ya da
+  `import jose` içe aktarması profil ihlalidir. `detector:acik-kaynak-lisansi/jwt-library-profile`
+  bunu `LICENSE-102` altında yüksek önemli bulgu olarak işaretler; öneri PyJWT'ye
+  (`PyJWT[crypto]`) geçmektir.
+- PyJWT'nin sürümü, lisansı ve kabulü bu çözümle değil, aşağıdaki altılı ek kabul ve
+  `dependency-admission.json` ile değerlendirilir. Profil, çözüm kaydı veya aday bağı
+  eksik/geçersizse `BLOCKED_INCOMPLETE` bildir. Tarihsel izin listesi baytları değişmez; bu çözüm
+  başka paket veya teknoloji onayı çıkarmaz ve diğer kaynak çelişkilerini çözmez.
+
 ## Altı çalışma zamanı paketinin sürümlü ek kabulü
 
 - `seed-normalization.yml#package_acceptances` içindeki
   `package-acceptance:runtime-six-20260917`, proje sahibinin kabul ettiği kesin ek listedir:
-  `cffi==2.1.1 / MIT-0`, `pydantic-settings==2.15.0 / MIT`, `sqlalchemy==2.0.52 / MIT`,
+  `cffi==2.1.1 / MIT-0`, `pydantic-settings==2.15.0 / MIT`, `sqlalchemy==2.1.1 / MIT`,
   `asyncpg==0.31.0 / Apache-2.0`, `pyjwt==2.15.0 / MIT`, `pwdlib==0.3.1 / MIT`.
 - Paket adlarını Python normalizasyonuyla karşılaştır: büyük/küçük harf ve ardışık
   tire/nokta/alt çizgi farkları kimliği değiştirmez. Extras tek başına kabul doğurmaz; aşağıdaki kilit mirası kararı geçişli paket adı
@@ -103,13 +120,13 @@ Listede bulunan paket de güvenlik açığı, bakım, lisans veya zararlı içer
   geliştirme/test/derleme kullanımına izin veren kesin ek listedir:
   `pytest-asyncio==1.4.0 / Apache-2.0`,
   `pytest-cov==7.1.0 / MIT`,
-  `black==26.5.1 / MIT`,
+  `black==26.10.1 / MIT`,
   `isort==9.0.1 / MIT`,
   `mypy==2.3.1 / MIT`,
   `pip-tools==7.6.1 / BSD-3-Clause`,
   `pip==26.2.1 / MIT`,
-  `setuptools==84.0.0 / MIT`,
-  `ruff==0.16.6 / MIT`,
+  `setuptools==84.1.0 / MIT`,
+  `ruff==0.16.9 / MIT`,
 - Aynı adayın `requirements-dev.in` / `requirements-dev.txt` sabitlemesi, paket
   kimliği, lisans kanıtı ve kanonik karar/otorite bağı eşleşirse yalnız tarihsel
   `approved_packages` yokluğu bulgusunu kapat. Eksik veya farklı bağ

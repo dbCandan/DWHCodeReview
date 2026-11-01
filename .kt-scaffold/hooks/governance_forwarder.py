@@ -427,14 +427,33 @@ def _unchained(
     return found
 
 
+def _collector_opener(context: ssl.SSLContext) -> urllib.request.OpenerDirector:
+    """An opener that can only reach an ``https`` address with the verified TLS context.
+
+    It has no ``file:``, ``data:``, ``ftp:`` or ``http:`` handler and no redirect handler, so the
+    sealed request can never be read from a local file, sent in clear text or re-sent to a
+    different address. The proxy handler keeps the system proxy settings the default opener uses;
+    any other scheme fails as an unknown URL type and a redirect is returned as an HTTP error.
+    """
+
+    opener = urllib.request.OpenerDirector()
+    for handler in (
+        urllib.request.ProxyHandler(),
+        urllib.request.UnknownHandler(),
+        urllib.request.HTTPSHandler(context=context),
+        urllib.request.HTTPDefaultErrorHandler(),
+        urllib.request.HTTPErrorProcessor(),
+    ):
+        opener.add_handler(handler)
+    return opener
+
+
 def _default_transport(
     url: str, body: bytes, headers: Mapping[str, str], context: ssl.SSLContext
 ) -> tuple[int, dict[str, str], bytes]:
     request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")  # noqa: S310
     try:
-        with urllib.request.urlopen(  # noqa: S310 -- https only, verified context
-            request, timeout=REQUEST_TIMEOUT_SECONDS, context=context
-        ) as response:
+        with _collector_opener(context).open(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
             return response.status, dict(response.headers.items()), response.read(MAX_ACK_BYTES + 1)
     except urllib.error.HTTPError as exc:
         return exc.code, dict(exc.headers.items()), b""

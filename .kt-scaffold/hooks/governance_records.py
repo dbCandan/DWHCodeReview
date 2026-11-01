@@ -276,7 +276,8 @@ def _shared_directory(path: Path) -> None:
     _checked_directory(path)
     if not _is_windows():
         try:
-            os.chmod(path, SHARED_DIRECTORY_MODE)
+            # Contract 1777: all users write, sticky bit; the rule flags every usable directory.
+            os.chmod(path, SHARED_DIRECTORY_MODE)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
         except OSError as exc:
             raise RecordError("root-not-writable") from exc
 
@@ -427,7 +428,8 @@ def _owned_directory(path: Path) -> None:
     else:
         if not _is_windows():
             with contextlib.suppress(OSError):
-                os.chmod(path, STREAM_DIRECTORY_MODE)
+                # Contract mode 0755: only the owner writes; the rule flags every usable directory.
+                os.chmod(path, STREAM_DIRECTORY_MODE)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
     _owned_private_directory(path)
 
 
@@ -1251,7 +1253,8 @@ def _user_directory(path: Path) -> None:
         raise RecordError("sync-directory-foreign")
     if not _is_windows() and stat.S_IMODE(status.st_mode) != USER_DIRECTORY_MODE:
         try:
-            os.chmod(path, USER_DIRECTORY_MODE)
+            # Contract mode 0755: only the owner writes; the rule flags every usable directory.
+            os.chmod(path, USER_DIRECTORY_MODE)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
         except OSError as exc:
             raise RecordError("root-not-writable") from exc
 
@@ -2014,6 +2017,36 @@ def venv_interpreter(project_root: Path) -> Path:
 
 
 REEXEC_MARKER = "KT_SCAFFOLD_PROFILE_INTERPRETER"
+# Variables that make an interpreter load code or a standard library from outside the project's
+# `.venv`, or run code the hook did not ask for; the profile interpreter starts without them.
+INTERPRETER_STEERING_VARIABLES = frozenset(
+    {
+        "PYTHONHOME",
+        "PYTHONPATH",
+        "PYTHONUSERBASE",
+        "PYTHONPLATLIBDIR",
+        "PYTHONSTARTUP",
+        "PYTHONINSPECT",
+        "PYTHONEXECUTABLE",
+        "__PYVENV_LAUNCHER__",
+    }
+)
+
+
+def profile_interpreter_environment(environment: Mapping[str, str]) -> dict[str, str]:
+    """The client's environment for the ``.venv`` interpreter, without interpreter steering.
+
+    Every other variable, including the client's hook context, passes unchanged; the marker stops
+    a second move.
+    """
+
+    selected = {
+        key: value
+        for key, value in environment.items()
+        if key.upper() not in INTERPRETER_STEERING_VARIABLES
+    }
+    selected[REEXEC_MARKER] = "1"
+    return selected
 
 
 def ensure_profile_interpreter(
@@ -2033,8 +2066,9 @@ def ensure_profile_interpreter(
     interpreter = venv_interpreter(project_root)
     # A POSIX `.venv` interpreter is normally a link to its base Python; follow it once.
     if minimum is not None and os.environ.get(REEXEC_MARKER) != "1" and interpreter.is_file():
-        environment = {**os.environ, REEXEC_MARKER: "1"}
-        os.execve(  # noqa: S606 -- replace this hook with the same script on the profile Python
+        environment = profile_interpreter_environment(os.environ)
+        # Same script on the profile Python: fixed program and argv, the client's hook environment.
+        os.execve(  # noqa: S606  # nosemgrep: python.lang.security.audit.dangerous-os-exec-tainted-env-args.dangerous-os-exec-tainted-env-args
             str(interpreter), [str(interpreter), str(script), *arguments], environment
         )
     return "python-runtime-mismatch"

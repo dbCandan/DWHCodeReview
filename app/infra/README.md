@@ -7,8 +7,11 @@ Uygulama/veri çalışma zamanı ağı kurum içi işaretlidir; bu servisler int
 Desktop, yalnız iç köprüden port yayımlayamadığı için yalnız nginx ve isteğe bağlı Grafana, ana
 makineye dönük uç köprüye de katılır. Port yalnız geri döngü adresindedir, DNS kapalıdır ve
 varsayılan yapılandırmada dışa giden üst akış yoktur; çevreleyen dış ağ trafiği kontrolü banka ana
-makine güvenlik duvarıdır. Seçiliyse gözlemlenebilirlik de iç ağda kalır. SQL Server ve LLM'e yerel
-erişim yalnız açıkça seçilen `local-egress` profiliyle açılır (aşağıda).
+makine güvenlik duvarıdır. Seçiliyse gözlemlenebilirlik de iç ağda kalır. nginx yalnız `localhost`
+ve `127.0.0.1` adlarıyla gelen isteğe yanıt verir; başka bir adla gelen istek (örneğin kötü niyetli
+bir sitenin adını bu bilgisayara yönlendirmesi) `421` ile reddedilir. Arka uca ve ön yüze tarayıcının
+gönderdiği ad değil, sabit `localhost` adı iletilir. SQL Server ve LLM'e yerel erişim yalnız açıkça
+seçilen `local-egress` profiliyle açılır (aşağıda).
 
 Bütün üçüncü taraf imajları sürüm ve özetle (`@sha256:`) sabitlenmiştir. Makinede yoksa Docker
 bu sabit özeti kayıt deposundan kendisi indirir; özet değişmediği için indirilen imaj incelenen

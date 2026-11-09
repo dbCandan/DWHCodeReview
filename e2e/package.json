@@ -8,7 +8,7 @@
     "sql-review": "node sql-review/run-all.mjs"
   },
   "dependencies": {
-    "@playwright/test": "1.63.0"
+    "@playwright/test": "1.64.0"
   },
   "engines": {
     "node": ">=22.13.0 <23"

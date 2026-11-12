@@ -1,0 +1,114 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "app.name" . }}-data
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  accessModes: [{{ .Values.app.persistence.accessMode | quote }}]
+  {{- with .Values.app.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.app.persistence.size | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "app.name" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.app.replicaCount }}
+  # SQLite on a ReadWriteOnce volume: stop the old pod before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "app.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "app.labels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: app
+          image: {{ include "app.image" . | quote }}
+          imagePullPolicy: Always
+          ports:
+            - {name: http, containerPort: {{ .Values.app.port }}}
+          env:
+            - {name: DWHCR_DATA_DIR, value: /data}
+            {{- range $key, $value := .Values.app.env }}
+            - {name: {{ $key | quote }}, value: {{ $value | toString | quote }}}
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+          startupProbe:
+            httpGet: {path: {{ .Values.app.healthPath | quote }}, port: http}
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: {path: {{ .Values.app.healthPath | quote }}, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: {{ .Values.app.healthPath | quote }}, port: http}
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.app.resources | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "app.name" . }}-data
+        - name: tmp
+          emptyDir: {sizeLimit: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "app.name" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "app.labels" . | nindent 4 }}
+  ports:
+    - {name: http, port: {{ .Values.app.port }}, targetPort: http}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "app.name" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ required "ingress.className is required" .Values.ingress.className | quote }}
+  tls:
+    - hosts: [{{ required "ingress.host is required" .Values.ingress.host | quote }}]
+      secretName: {{ required "ingress.tlsSecretName is required" .Values.ingress.tlsSecretName | quote }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "app.name" . }}
+                port: {name: http}

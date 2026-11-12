@@ -17,6 +17,19 @@ app:
   healthPath: /api/health
   # Extra non-secret environment variables for the container, e.g. {LOG_LEVEL: info}.
   env: {}
+  # Pod network isolation (templates/networkpolicy.yaml). Inbound: only the ingress controller in
+  # kube-system. Outbound: DNS here; the environment's LLM and SQL Server peers are listed in
+  # values-project.yaml, which replaces this egress list as a whole.
+  networkPolicy:
+    ingress:
+      - from:
+          - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+        ports: [{protocol: TCP, port: 8080}]
+    egress:
+      - to:
+          - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+            podSelector: {matchLabels: {k8s-app: kube-dns}}
+        ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
   persistence:
     accessMode: ReadWriteOnce
     size: 1Gi

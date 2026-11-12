@@ -1,0 +1,26 @@
+{{- /*
+Network isolation of the app pod, as the earlier chart had for its backend: inbound only from the
+ingress controller, outbound only to the listed peers (DNS, the LLM endpoint, SQL Server). Both lists
+are required so the pod is never deployed unisolated.
+*/ -}}
+{{- if not .Values.app.networkPolicy.ingress -}}
+{{- fail "app.networkPolicy.ingress must be supplied by the deployment environment" -}}
+{{- end -}}
+{{- if not .Values.app.networkPolicy.egress -}}
+{{- fail "app.networkPolicy.egress must include DNS and the admitted LLM and SQL Server peers" -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "app.name" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "app.labels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    {{- toYaml .Values.app.networkPolicy.ingress | nindent 4 }}
+  egress:
+    {{- toYaml .Values.app.networkPolicy.egress | nindent 4 }}

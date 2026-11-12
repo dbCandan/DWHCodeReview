@@ -3,6 +3,20 @@ app:
   persistence:
     size: 2Gi
     storageClassName: nfs-sc
+  # Outbound peers of this environment (the same ones the earlier chart admitted). This list replaces
+  # the egress list of values.yaml, so it repeats DNS.
+  networkPolicy:
+    egress:
+      - to:
+          - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+            podSelector: {matchLabels: {k8s-app: kube-dns}}
+        ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+      # LLM (RunAI inference endpoint)
+      - to: [{ipBlock: {cidr: 10.14.3.99/32}}]
+        ports: [{protocol: TCP, port: 443}]
+      # SQL Server; no single address yet, so the widest block the deployment rules admit.
+      - to: [{ipBlock: {cidr: 10.0.0.0/8}}]
+        ports: [{protocol: TCP, port: 1433}]
 ingress:
   className: nginx
   host: dwhcodereview.ailab-test.kuveytturk.com.tr

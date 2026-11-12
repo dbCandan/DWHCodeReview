@@ -1,5 +1,7 @@
 from typing import Any
 
+import pytest
+
 from app.services.metadata import (
     MetadataCollector,
     PartitionInfo,
@@ -8,6 +10,7 @@ from app.services.metadata import (
     format_for_llm,
     metadata_precondition_met,
     parse_name_at,
+    quote_ident,
     text_references,
 )
 from app.services.rule_engine import mask_sql
@@ -110,6 +113,11 @@ class FakeCursor:
         self._rows: list[Any] = []
 
     def execute(self, sql: str, *params: Any) -> None:
+        if sql.startswith("EXEC [") and params:
+            # sp_executesql call: the statement, its declaration and the values are all bound.
+            assert sql.endswith("?") and "'" not in sql, sql
+            body, params = params[0], params[2:]
+            sql = f"{sql} -- {body}"
         self.statements.append(sql)
         if sql.startswith("SELECT name FROM sys.databases"):
             self._rows = [("EDW",), ("EDWSTG",), ("master",)]
@@ -123,7 +131,7 @@ class FakeCursor:
                 raise RuntimeError("[42000] Invalid object name '#tmp'. (208)")
             self._rows = [(None, None, "CON", "Account"), (None, "EDWSTG", "BOAAI", "Src"),
                           ("LINKED", "X", "Y", "Z")]
-        elif "OBJECT_ID(@p0, N''P'')" in sql:
+        elif "OBJECT_ID(@p0, N'P')" in sql:
             self._rows = [(99,)] if params[0] in self.mrg_procedures.get(database, ()) else [(None,)]
         elif "OBJECT_ID(@p0)" in sql:
             row = self.objects.get((database, params[0]))
@@ -204,7 +212,7 @@ def test_collector_scd_definition() -> None:
         if sql.startswith("SELECT name FROM sys.databases"):
             cursor._rows = [("EDW",), ("EDWSKEY",), ("EDWDM",), ("EDWSTG",)]
             return
-        if "dm_sql_referenced_entities" in sql:
+        if params and "dm_sql_referenced_entities" in str(params[0]):
             cursor._rows = []
             return
         original(sql, *params)
@@ -217,7 +225,15 @@ def test_collector_scd_definition() -> None:
     assert flags == {"EDW.CON.Account": True, "EDW.CON.NoMrg": False,
                      "EDWSKEY.CHN.ChannelDetailKey": False, "EDWDM.CUS.Scd": True}
     # The mrg procedure is only asked for in EDW/ERPEDW.
-    assert sum("N''P''" in s for s in cursor.statements) == 2
+    assert sum("N'P'" in s for s in cursor.statements) == 2
+
+
+def test_quote_ident_escapes_and_rejects_invalid_names() -> None:
+    assert quote_ident("EDW") == "[EDW]"
+    assert quote_ident("a]b; DROP TABLE x--") == "[a]]b; DROP TABLE x--]"
+    for bad in ("", "x" * 129, "a\x00b", "a\nb"):
+        with pytest.raises(ValueError):
+            quote_ident(bad)
 
 
 def test_collector_surrogate_key_bases_cached() -> None:

@@ -1,0 +1,16 @@
+.git
+.claude
+docs
+dev
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/dist
+app/backend/data
+app/backend/tests
+app/frontend/src/**/*.test.ts
+app/frontend/src/**/*.test.tsx
+**/*.log
+.env
+.env.*

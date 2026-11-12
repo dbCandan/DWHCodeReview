@@ -1,0 +1,24 @@
+# Gitleaks configuration for the generated application repository.
+# The offline security gate invokes this configuration; no finding leaves the bank network.
+# Each exception binds a file path and a value shape together for one rule; this file disables
+# no rule and adds no file-wide skip.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+    [[rules.allowlists]]
+    description = "Factory integrity locks: each line maps a scaffolded file path to its SHA-256 digest"
+    condition = "AND"
+    regexTarget = "line"
+    paths = ['''(?:^|/)\.kt-scaffold/manifest\.json$''', '''(?:^|/)rules/GENERATED\.lock$''']
+    regexes = ['''^\s*"[^"\s]+": "[0-9a-f]{64}",?\s*$''']
+
+    [[rules.allowlists]]
+    description = "Backend tests name fake credentials with a -placeholder suffix"
+    condition = "AND"
+    regexTarget = "secret"
+    paths = ['''(?:^|/)app/backend/tests/.+\.py$''']
+    regexes = ['''^[a-z0-9]+(?:-[a-z0-9]+)*-placeholder$''']

@@ -111,6 +111,20 @@ npm run dev
 
 </details>
 
+<details>
+<summary>Docker ile çalıştırmak için</summary>
+
+Tek imaj API'yi (`/api`) ve derlenmiş arayüzü **8080** portunda sunar. İmaj ODBC Driver 18'i içerir ve root olmayan kullanıcıyla çalışır.
+
+```bash
+docker build -t dwh-code-review .
+docker run -p 8080:8080 -v dwhcr-data:/data dwh-code-review
+```
+
+Uygulama verisi `/data` biriminde saklanır. Container'dan yerel bir SQL Server'a erişmek için sunucu adı olarak `host.docker.internal` kullanın; Windows istemci alias'ları container içinde çözülmez.
+
+</details>
+
 ### İlk adımlar
 
 1. **Bağlantılar** sayfasında SQL Server bağlantısı ekleyin. Sunucu adı, SQL istemci alias'ı veya `host,port` yazılabilir; **Test et** ile doğrulayın.

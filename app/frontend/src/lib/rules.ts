@@ -111,9 +111,25 @@ export function scopeShort(rule: RuleScope): string {
   return parts.length ? parts.join(' · ') : 'Tümü';
 }
 
+/** Longest rule pattern the browser compiles; the shipped rules stay far below it. */
+export const MAX_PATTERN_LENGTH = 4000;
+
+/**
+ * The one place the UI compiles a regex it did not write: a rule's own pattern, typed by the
+ * local user to preview scope and syntax (the backend runs the rules). Over-long patterns are
+ * refused before compiling to bound the cost of a catastrophic pattern; the result is used only
+ * against short object names. Throws like `new RegExp` when the pattern is invalid.
+ */
+export function compileRulePattern(pattern: string, flags = ''): RegExp {
+  const source = toJsRegexSource(pattern);
+  if (source.length > MAX_PATTERN_LENGTH) throw new SyntaxError(`desen ${MAX_PATTERN_LENGTH} karakteri aşıyor`);
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
+  return new RegExp(source, flags);
+}
+
 function compileNamePattern(pattern: string): RegExp | null {
   try {
-    return new RegExp(toJsRegexSource(pattern), 'i');
+    return compileRulePattern(pattern, 'i');
   } catch {
     return null;
   }
@@ -181,11 +197,11 @@ export function regexWarning(pattern: string | null | undefined): string | null 
   const p = (pattern ?? '').trim();
   if (!p) return null;
   try {
-    new RegExp(toJsRegexSource(p), 'u');
+    compileRulePattern(p, 'u');
     return null;
   } catch {
     try {
-      new RegExp(toJsRegexSource(p));
+      compileRulePattern(p);
       return null;
     } catch (e) {
       const msg = e instanceof Error ? e.message.replace(/^Invalid regular expression:\s*/, '') : String(e);

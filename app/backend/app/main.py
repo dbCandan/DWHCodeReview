@@ -1,6 +1,7 @@
 """FastAPI application factory."""
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,7 +13,13 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import crypto
-from app.config import ANALYSIS_WORKERS, APP_VERSION, CORS_ORIGINS, default_data_dir
+from app.config import (
+    ANALYSIS_WORKERS,
+    APP_VERSION,
+    CORS_ORIGINS,
+    STATIC_DIR_ENV,
+    default_data_dir,
+)
 from app.db import init_database
 from app.routers import (
     analyses,
@@ -32,6 +39,7 @@ from app.services.assistant import AssistantRunner
 from app.services.catalog import get_catalog
 from app.services.scheduler import Scheduler, recover_runs
 from app.services.assistant import recover_interrupted as recover_assistant
+from app.web import SecurityHeadersMiddleware, SpaStaticFiles, static_dir
 
 logger = logging.getLogger("dwhcr")
 
@@ -116,6 +124,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         allow_headers=["*"],
         expose_headers=["Content-Disposition"],
     )
+    app.add_middleware(SecurityHeadersMiddleware)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
@@ -136,6 +145,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     for module in (dashboard, assistant, rules, exceptions, groups, connections, settings,
                    analyses, schedules):
         app.include_router(module.router)
+    ui = static_dir(os.environ.get(STATIC_DIR_ENV, "").strip())
+    if ui is not None:  # after the API routes: everything else is the single-page app
+        app.mount("/", SpaStaticFiles(directory=ui), name="ui")
     return app
 
 

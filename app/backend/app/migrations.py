@@ -8,7 +8,9 @@ DEFAULT fills them). The rule set version lives in `app_meta` and is upgraded st
 
 import logging
 
-from sqlalchemy import Engine, select, text
+import re
+
+from sqlalchemy import Engine, inspect, select
 from sqlalchemy.orm import Session
 
 from app import models
@@ -60,19 +62,34 @@ ADDED_COLUMNS: dict[str, dict[str, str]] = {
 }
 
 
+_IDENT = re.compile(r"^[a-z_][a-z0-9_]*$")
+_DDL = re.compile(r"^[A-Z]+(?:\(\d+\))?(?: NOT NULL)?(?: DEFAULT (?:-?\d+|'[^']*'))?$")
+
+
+def _add_column_ddl(preparer: object, table: str, column: str, ddl: str) -> str:
+    """ALTER TABLE for one ADDED_COLUMNS entry; names and types come only from that constant."""
+    if not (_IDENT.match(table) and _IDENT.match(column) and _DDL.match(ddl)):
+        raise ValueError(f"geçersiz şema tanımı: {table}.{column} {ddl}")
+    quote = preparer.quote  # type: ignore[attr-defined]
+    return f"ALTER TABLE {quote(table)} ADD COLUMN {quote(column)} {ddl}"
+
+
 def upgrade_schema(engine: Engine) -> list[str]:
     """Add missing columns; returns "table.column" for each column added."""
     added: list[str] = []
     with engine.begin() as connection:
+        inspector = inspect(connection)
+        tables = set(inspector.get_table_names())
+        preparer = connection.dialect.identifier_preparer
         for table, columns in ADDED_COLUMNS.items():
-            existing = {
-                str(row[1]) for row in connection.execute(text(f"PRAGMA table_info({table})"))
-            }
-            if not existing:  # table missing: create_all makes it with every column
+            if table not in tables:  # table missing: create_all makes it with every column
                 continue
+            existing = {str(c["name"]) for c in inspector.get_columns(table)}
             for column, ddl in columns.items():
                 if column not in existing:
-                    connection.execute(text(f'ALTER TABLE {table} ADD COLUMN "{column}" {ddl}'))
+                    statement = _add_column_ddl(preparer, table, column, ddl)
+                    # Identifiers and types are validated constants from ADDED_COLUMNS, not input.
+                    connection.exec_driver_sql(statement)  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query, python.lang.security.audit.formatted-sql-query.formatted-sql-query
                     added.append(f"{table}.{column}")
     if added:
         logger.info("eklenen kolonlar: %s", ", ".join(added))

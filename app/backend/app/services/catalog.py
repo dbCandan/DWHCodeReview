@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Protocol
 
 from app.config import SQL_LOGIN_TIMEOUT_SECONDS, SQL_QUERY_TIMEOUT_SECONDS
-from app.services.metadata import MetadataCollector, ObjectMetadata
+from app.services.metadata import MetadataCollector, ObjectMetadata, quote_ident
 
 SYSTEM_DATABASES = frozenset({"master", "tempdb", "model", "msdb"})
 
@@ -119,10 +119,6 @@ def _has_control(value: str) -> bool:
 def braced(value: str) -> str:
     """ODBC brace quoting: `;`, `=` and braces inside the value cannot add keywords."""
     return "{" + value.replace("}", "}}") + "}"
-
-
-def quote_ident(name: str) -> str:
-    return "[" + name.replace("]", "]]") + "]"
 
 
 def pick_driver(available: Sequence[str]) -> str:
@@ -377,7 +373,12 @@ class PyodbcCatalog:
     def _use(cursor: Any, database: str) -> None:
         if is_system_database(database):
             raise CatalogError("Sistem veritabanları incelenemez.")
-        cursor.execute(f"USE {quote_ident(database)}")
+        try:
+            target = quote_ident(database)
+        except ValueError as error:
+            raise CatalogError(str(error)) from None
+        # A database name cannot be a bound parameter; quote_ident escapes it and rejects invalid names.
+        cursor.execute("USE " + target)  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query, python.lang.security.audit.formatted-sql-query.formatted-sql-query
 
     def _run(self, config: ConnectionConfig, work: Any) -> Any:
         import pyodbc

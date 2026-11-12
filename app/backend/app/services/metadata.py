@@ -453,16 +453,33 @@ PARTITION_SQL = (
 )
 
 
+#: SQL Server identifiers are sysname (nvarchar(128)); control characters never appear in them.
+_INVALID_IDENT = re.compile(r"[\x00-\x1f]")
+
+
 def quote_ident(name: str) -> str:
+    """Bracket-quotes a SQL Server identifier (``a]b`` -> ``[a]]b]``).
+
+    Object and database names cannot be bound as query parameters, so every name that reaches
+    SQL text goes through here: ``]`` is doubled, and empty, over-long or control-character
+    names are rejected before they can end the bracket early.
+    """
+    if not name or len(name) > 128 or _INVALID_IDENT.search(name):
+        raise ValueError(f"Geçersiz SQL Server tanımlayıcısı: {name[:40]!r}")
     return "[" + name.replace("]", "]]") + "]"
 
 
-def _in_database(database: str, sql: str, param_types: Sequence[str]) -> str:
-    """`EXEC [db].sys.sp_executesql` wrapper; the values are bound as `?` parameters."""
-    declared = ", ".join(f"@p{i} {t}" for i, t in enumerate(param_types))
+def _in_database(database: str, param_types: Sequence[str]) -> str:
+    """``EXEC [db].sys.sp_executesql ?, ?, @p0 = ?…`` to run a statement inside another database.
+
+    The statement text, its parameter declaration and the values are all bound as ``?``
+    parameters (in that order); only the quoted database name is part of the SQL text.
+    """
+    target = f"{quote_ident(database)}.sys.sp_executesql"
+    if not param_types:
+        return f"EXEC {target} ?"
     args = ", ".join(f"@p{i} = ?" for i in range(len(param_types)))
-    body = sql.replace("'", "''")
-    return f"EXEC {quote_ident(database)}.sys.sp_executesql N'{body}', N'{declared}', {args}"
+    return f"EXEC {target} ?, ?, {args}"
 
 
 def _short_error(error: Exception) -> str:
@@ -550,18 +567,21 @@ class MetadataCollector:
                 real = databases.get(name.lower())
                 if real is None:
                     continue
-                body = SURROGATE_BASES_SQL.replace("'", "''")
                 try:
-                    self._cursor.execute(f"EXEC {quote_ident(real)}.sys.sp_executesql N'{body}'")
-                    bases.update(str(row[0]).lower() for row in self._cursor.fetchall() if row[0])
+                    rows = self._query(real, SURROGATE_BASES_SQL)
+                    bases.update(str(row[0]).lower() for row in rows if row[0])
                 except Exception as error:  # noqa: BLE001 - optional information
                     logger.info("surrogate key list of %s failed: %s", real, error)
             self._surrogate_bases = frozenset(bases)
         return self._surrogate_bases
 
     def _query(self, database: str, sql: str, *params: tuple[str, Any]) -> list[Any]:
-        statement = _in_database(database, sql, [t for t, _ in params])
-        self._cursor.execute(statement, *[value for _, value in params])
+        types = [t for t, _ in params]
+        bound: list[Any] = [sql]
+        if types:
+            bound.append(", ".join(f"@p{i} {t}" for i, t in enumerate(types)))
+            bound.extend(value for _, value in params)
+        self._cursor.execute(_in_database(database, types), *bound)
         return list(self._cursor.fetchall())
 
     def _database_map(self) -> dict[str, str]:

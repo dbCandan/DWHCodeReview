@@ -1,1 +1,0 @@
-"""Committed, reviewed Alembic revisions."""

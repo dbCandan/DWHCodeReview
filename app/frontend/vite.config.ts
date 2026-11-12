@@ -1,10 +1,23 @@
+/// <reference types="vitest/config" />
 import {fileURLToPath, URL} from 'node:url';
 import {defineConfig} from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {alias: {'@': fileURLToPath(new URL('./src', import.meta.url))}},
-  server: {host: '0.0.0.0', port: 3000},
+  server: {
+    port: 5173,
+    strictPort: true,
+    proxy: {'/api': {target: 'http://127.0.0.1:8000', changeOrigin: true}},
+  },
+  preview: {port: 4173, proxy: {'/api': {target: 'http://127.0.0.1:8000', changeOrigin: true}}},
+  build: {chunkSizeWarningLimit: 900},
+  test: {
+    environment: 'happy-dom',
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
+    css: false,
+  },
 });
-

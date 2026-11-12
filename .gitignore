@@ -1,4 +1,3 @@
-.DS_Store
 .env
 .env.*
 !.env.example
@@ -12,8 +11,9 @@ node_modules/
 .DS_Store
 dist/
 coverage/
-playwright-report/
-test-results/
 *.log
-app/infra/.data/
-.kt-scaffold/evidence.json
+app/backend/data/
+dev/sqlserver/.env.local
+
+# Local backend data
+app/backend/data/

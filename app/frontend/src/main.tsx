@@ -1,20 +1,31 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
-import {BrowserRouter} from 'react-router';
-import App from './App';
-import {AuthProvider} from '@/contexts/AuthContext';
-import {IntlProvider} from '@/contexts/IntlContext';
-import './globals.css';
+import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
+import {RouterProvider} from 'react-router';
+import {ApiError} from '@/lib/api';
+import {ThemeProvider} from '@/hooks/theme';
+import {FeedbackProvider} from '@/components/ui/Toast';
+import {router} from './App';
+import './index.css';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 15_000,
+      refetchOnWindowFocus: false,
+      retry: (count, error) => !(error instanceof ApiError && error.status >= 400 && error.status < 500) && count < 1,
+    },
+  },
+});
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <IntlProvider>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
-      </IntlProvider>
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <FeedbackProvider>
+          <RouterProvider router={router} />
+        </FeedbackProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   </StrictMode>,
 );
-

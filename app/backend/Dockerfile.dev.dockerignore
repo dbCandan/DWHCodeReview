@@ -1,8 +1,0 @@
-**
-!app/backend/requirements.txt
-!app/backend/requirements-dev.txt
-!app/backend/entrypoint.dev.sh
-!app/infra/locks/backend-alpine-packages.lock
-!app/infra/locks/msodbcsql18-alpine-packages.lock
-!app/infra/install-backend-system-packages.sh
-!app/backend/certs/corporate-inference-root.crt

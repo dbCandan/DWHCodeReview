@@ -1,177 +1,165 @@
-import {Suspense, useEffect, useState} from 'react';
-import {Link, Outlet, useLocation} from 'react-router';
-import {BrandMark} from '@/components/brand/BrandMark';
-import {CommandPalette} from '@/components/layout/CommandPalette';
-import {Backdrop} from '@/components/layout/Backdrop';
-import {GlobalReviewIndicator, ReviewWindows} from '@/components/review/ReviewWindows';
-import {Icon} from '@/components/ui/Icon';
-import {LoadingState} from '@/components/ui/States';
-import {useAuth} from '@/contexts/AuthContext';
-import {useIntl} from '@/contexts/IntlContext';
-import {ReviewSessionProvider, useReviewSession} from '@/contexts/ReviewSessionContext';
-import {NavigationProvider, useAppNavigation} from '@/contexts/NavigationContext';
-import {isCurrent} from '@/lib/navigation';
-import {roleLabel} from '@/lib/access';
-import {config} from '@/lib/config';
+import {useEffect, useState, type ReactNode} from 'react';
+import {Outlet, useLocation, useNavigate} from 'react-router';
+import {CircleHelp, Menu, Moon, Play, Search, Sun} from 'lucide-react';
+import {cn, isMac, safeStorageGet, safeStorageSet} from '@/lib/utils';
+import {openTour} from '@/lib/tour';
+import {WelcomeTour} from '@/components/tour/WelcomeTour';
+import {useTheme} from '@/hooks/theme';
+import {Button} from '@/components/ui/Button';
+import {Kbd} from '@/components/ui/Badge';
+import {Tooltip} from '@/components/ui/Tooltip';
+import {Sidebar} from './Sidebar';
+import {CommandPalette} from './CommandPalette';
+import {titleFor} from './nav';
 
-/**
- * Signed-in layout, "Evren": a star field behind everything, one side menu with the daily work
- * and the super admin's Yönetim, Ctrl+K quick navigation, the live review and the user at the
- * foot; the page fills the rest of the screen. On a narrow screen the menu folds behind a button.
- * Hiding a destination is not authorization; every page's data comes from role-checked endpoints.
- */
-export function AppShell() {
-  return (
-    <ReviewSessionProvider>
-      <NavigationProvider>
-        <ShellLayout />
-      </NavigationProvider>
-    </ReviewSessionProvider>
-  );
+function useMedia(query: string) {
+  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const on = () => setMatches(mql.matches);
+    on();
+    mql.addEventListener('change', on);
+    return () => mql.removeEventListener('change', on);
+  }, [query]);
+  return matches;
 }
 
-function ShellLayout() {
-  const {user, logout} = useAuth();
-  const {t} = useIntl();
-  const {session} = useReviewSession();
-  const navigation = useAppNavigation();
-  const {pathname} = useLocation();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPath, setMenuPath] = useState(pathname);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
+const COLLAPSE_KEY = 'dwhcr.sidebar.collapsed';
 
-  // Close the narrow-screen menu after navigation.
-  if (menuPath !== pathname) {
-    setMenuPath(pathname);
-    setMenuOpen(false);
-  }
+export function AppShell() {
+  const {theme, toggle} = useTheme();
+  const {pathname} = useLocation();
+  const navigate = useNavigate();
+  const [collapsedPref, setCollapsedPref] = useState(() => safeStorageGet(COLLAPSE_KEY) === '1');
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const isMobile = useMedia('(max-width: 767px)');
+  const isNarrow = useMedia('(max-width: 1100px)');
+  const collapsed = collapsedPref || isNarrow;
 
   useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        setPaletteOpen(true);
-      } else if (event.key === 'Escape') {
-        setMenuOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
       }
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const reviewing = session.phase === 'running';
-  const displayName = user?.display_name || user?.username || '';
-  const role = user?.is_super_admin ? t('home.overview.superAdmin') : roleLabel(user?.role);
+  useEffect(() => {
+    document.title = `${titleFor(pathname)} · DWH Code Review`;
+    setMobileOpen(false);
+  }, [pathname]);
 
-  async function signOut() {
-    setSigningOut(true);
-    await logout();
-  }
+  const toggleCollapse = () => {
+    const next = !collapsedPref;
+    setCollapsedPref(next);
+    safeStorageSet(COLLAPSE_KEY, next ? '1' : '0');
+  };
+
+  const mod = isMac() ? '⌘' : 'Ctrl';
 
   return (
-    <div className="shell" data-menu={menuOpen ? 'open' : 'closed'}>
-      <Backdrop />
-      <a className="skip-link" href="#main-content">
-        {t('shell.skipToContent')}
-      </a>
-      <header className="mobilebar">
-        <Link to="/" className="side-brand" aria-label={`${config.productName} ana sayfa`}>
-          <BrandMark />
-          <span className="side-brand-text" aria-hidden="true">
-            <b>{config.productName}</b>
-          </span>
-        </Link>
-        <button
-          type="button"
-          className="icon-button"
-          aria-expanded={menuOpen}
-          aria-controls="side-menu"
-          onClick={() => setMenuOpen(!menuOpen)}
-        >
-          <Icon name="menu" />
-          <span>{t('shell.menu')}</span>
-        </button>
-      </header>
-      <aside id="side-menu" className="side">
-        <Link to="/" className="side-brand" aria-label={`${config.productName} ana sayfa`}>
-          <BrandMark />
-          <span className="side-brand-text" aria-hidden="true">
-            <b>{config.productName}</b>
-            <small>{t('shell.tagline')}</small>
-          </span>
-        </Link>
-        <button
-          type="button"
-          className="cmdk-trigger"
-          onClick={() => setPaletteOpen(true)}
-          aria-keyshortcuts="Control+K"
-          aria-label="Hızlı geçiş (Ctrl+K)"
-        >
-          <Icon name="search" />
-          <span className="grow">Ara veya git…</span>
-          <kbd>Ctrl K</kbd>
-        </button>
-        <nav className="menu" aria-label={t('shell.navigation')}>
-          {navigation.groups.map((group, index) => (
-            <div key={index} className="menu-group">
-              {group.items.map((item) => (
-                <Link key={item.to} to={item.to} aria-current={isCurrent(item, pathname) ? 'page' : undefined}>
-                  <Icon name={item.icon} />
-                  <span className="grow truncate">{item.label}</span>
-                  {reviewing &&
-                    ((item.to === '/inceleme' && session.kind === 'object') ||
-                      (item.to === '/sql-inceleme' && session.kind === 'script')) && (
-                      <span className="pulse-dot" role="img" aria-label="İnceleme sürüyor" />
-                    )}
-                </Link>
-              ))}
-            </div>
-          ))}
-        </nav>
-        <div className="side-foot">
-          <GlobalReviewIndicator />
-          <div className="side-user">
-            <span className="avatar" aria-hidden="true">
-              {initials(displayName)}
-            </span>
-            <span className="side-user-text">
-              <strong className="truncate">{displayName}</strong>
-              <span className="truncate">{role}</span>
-            </span>
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => void signOut()}
-              disabled={signingOut}
-              aria-busy={signingOut || undefined}
-              title={t('auth.session.signOut')}
-            >
-              <Icon name="logOut" />
-              <span className="sr-only">{t('auth.session.signOut')}</span>
-            </button>
+    <div className="flex h-dvh overflow-hidden">
+      {/* Ambient glow */}
+      <div className="pointer-events-none fixed inset-x-0 top-0 -z-0 h-[420px] bg-[radial-gradient(ellipse_60%_100%_at_50%_-30%,color-mix(in_srgb,var(--color-accent)_9%,transparent),transparent_70%)]" />
+
+      {!isMobile && (
+        <div className="relative z-20 h-full shrink-0">
+          <Sidebar collapsed={collapsed} onToggle={isNarrow ? undefined : toggleCollapse} />
+        </div>
+      )}
+      {isMobile && mobileOpen && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 animate-fade-in bg-black/50" onClick={() => setMobileOpen(false)} />
+          <div className="relative h-full w-fit animate-slide-in">
+            <Sidebar collapsed={false} mobile onNavigate={() => setMobileOpen(false)} />
           </div>
         </div>
-      </aside>
-      {menuOpen && (
-        <button type="button" className="side-scrim" aria-label="Menüyü kapat" onClick={() => setMenuOpen(false)} />
       )}
-      <main id="main-content" className="shell-main" tabIndex={-1}>
-        <Suspense fallback={<LoadingState />}>
-          <Outlet />
-        </Suspense>
-      </main>
-      <ReviewWindows />
-      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+
+      <div className="relative z-10 flex min-w-0 flex-1 flex-col">
+        <header className="glass sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-line px-4 lg:px-6">
+          {isMobile && (
+            <Button variant="ghost" size="sm" iconOnly aria-label="Menü" onClick={() => setMobileOpen(true)}>
+              <Menu className="size-4" />
+            </Button>
+          )}
+          <div className="flex min-w-0 items-center gap-2 text-[13px]">
+            <span className="hidden text-fg-subtle sm:inline">DWH Code Review</span>
+            <span className="hidden text-fg-subtle/60 sm:inline">/</span>
+            <span className="truncate font-medium text-fg">{titleFor(pathname)}</span>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              data-tour="palette"
+              onClick={() => setPaletteOpen(true)}
+              className="group flex h-8 items-center gap-2 rounded-lg border border-line-strong bg-surface-2/60 pr-1.5 pl-2.5 text-[12.5px] text-fg-subtle transition-colors hover:border-fg-subtle/40 hover:text-fg-muted md:w-64"
+            >
+              <Search className="size-3.5" />
+              <span className="hidden flex-1 text-left md:inline">Ara veya komut çalıştır…</span>
+              <span className="hidden items-center gap-0.5 md:flex">
+                <Kbd>{mod}</Kbd>
+                <Kbd>K</Kbd>
+              </span>
+            </button>
+            <Tooltip content="Tanıtım turu" side="bottom">
+              <Button variant="ghost" size="md" iconOnly aria-label="Tanıtım turunu başlat" onClick={() => openTour()}>
+                <CircleHelp className="size-4" />
+              </Button>
+            </Tooltip>
+            <Tooltip content={theme === 'dark' ? 'Açık tema' : 'Koyu tema'} side="bottom">
+              <Button variant="ghost" size="md" iconOnly aria-label="Temayı değiştir" onClick={toggle}>
+                {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              </Button>
+            </Tooltip>
+            {pathname !== '/analyses/new' && (
+              <Button
+                variant="primary"
+                size="md"
+                className="hidden sm:inline-flex"
+                icon={<Play className="size-3.5 fill-current" />}
+                onClick={() => navigate('/analyses/new')}
+              >
+                Yeni Analiz
+              </Button>
+            )}
+          </div>
+        </header>
+        <main className={cn('min-h-0 flex-1 overflow-y-auto')} id="main">
+          <div className="mx-auto w-full max-w-[2200px] px-4 py-6 lg:px-6 lg:py-7">
+            <Outlet />
+          </div>
+        </main>
+      </div>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <WelcomeTour />
     </div>
   );
 }
 
-/** Up to two initials of a display name for the avatar disc; decorative. */
-function initials(name: string): string {
-  const parts = name.trim().split(/[\s._-]+/).filter(Boolean);
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0].toLocaleUpperCase('tr-TR'))
-    .join('');
+export function PageHeader({
+  title,
+  description,
+  actions,
+  eyebrow,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  actions?: ReactNode;
+  eyebrow?: ReactNode;
+}) {
+  return (
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+      <div className="min-w-0">
+        {eyebrow && <div className="mb-1.5">{eyebrow}</div>}
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">{title}</h1>
+        {description && <p className="mt-1 max-w-2xl text-[13px] text-fg-subtle">{description}</p>}
+      </div>
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+    </div>
+  );
 }

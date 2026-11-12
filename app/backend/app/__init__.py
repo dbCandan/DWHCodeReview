@@ -1,1 +1,0 @@
-"""dwhcodereview backend package."""

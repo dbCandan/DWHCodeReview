@@ -1,165 +1,200 @@
-import {formatDateTime} from '@/lib/format';
-import type {RuleGroupItem, RuleItem, RuleSetVersionSummary} from '@/types/sqlReview';
+import type {BuiltinCheck, DbObject, MetadataPrecondition, ObjectType, RuleKind} from '@/types';
+import {formatDuration} from './format';
 
-export type Tier = 'critical' | 'normal';
-export const RULE_TEXT_LIMIT = 8000;
-/** rule-management Requirement 2: a one-sentence summary on one line. */
-export const RULE_SUMMARY_LIMIT = 200;
-export const PREVIEW_CHARS = 100;
-/** rule-group-selection Requirement 1: group names and the number of groups. */
-export const RULE_GROUP_NAME_LIMIT = 80;
-export const RULE_GROUPS_LIMIT = 50;
+export const RULE_KIND_LABEL: Record<RuleKind, string> = {
+  regex: 'Regex',
+  llm: 'LLM',
+  builtin: 'Yerleşik',
+};
 
-export interface RuleDraft {
-  critical: RuleItem[];
-  normal: RuleItem[];
-  /** Named rule groups; a rule may belong to several (rule-group-selection Decision 1). */
-  groups: RuleGroupItem[];
+export const RULE_KIND_HINT: Record<RuleKind, string> = {
+  regex: 'Desen eşleşmesi, anında sonuç',
+  llm: 'Model kuralı okur ve kodu yorumlar; yavaş',
+  builtin: 'Sistemde tanımlı, katalog metadatası kullanan hazır kontrol',
+};
+
+export const BUILTIN_CHECK_LABEL: Record<BuiltinCheck, string> = {
+  nolock_physical_tables: 'Fiziksel tablolarda NOLOCK zorunluluğu',
+  derived_view_consistency: 'Türev view ↔ asıl view uyumu',
+  left_then_inner_join: 'LEFT JOIN sonrası INNER JOIN',
+  select_list_subquery: 'SELECT listesinde alt sorgu',
+  tablock_physical_insert: 'Fiziksel tabloya INSERT WITH (TABLOCK)',
+  join_column_type_mismatch: 'Join kolonlarında tip uyumu',
+  non_sargable_predicates: 'Join/filtre kolonunda fonksiyon',
+  or_in_predicates: 'JOIN/WHERE koşulunda OR',
+  scalar_udf_in_query: 'Sorgu içinde scalar fonksiyon',
+  window_order_by_type: 'Pencere fonksiyonu ORDER BY tipi',
+  date_variable_type_mismatch: 'Tarih değişkeni ↔ alan tip uyumu',
+  personnel_flag_view_source: 'Asıl view’da PersonnelFlag kaynağı',
+  id_literal_filter: 'Id alanında sabit değer filtresi (katalog)',
+  calendar_date_predicate: 'Tarih kolonu dönüşümü → Calendar önerisi',
+};
+
+export const BUILTIN_CHECK_DETAIL: Record<BuiltinCheck, string> = {
+  nolock_physical_tables:
+    'FROM/JOIN ile okunan ve katalogda kullanıcı tablosu (U) olan her referansta WITH (NOLOCK) arar. #temp, @tablo değişkeni, CTE ve UPDATE/DELETE hedefleri hariçtir.',
+  derived_view_consistency:
+    'Masked / PersonnelExcluded / PersonnelMasked türev view’ını asıl view ile karşılaştırır: asıl view’dan okuma, kolon adı/sırası/tipi ve PersonnelFlag filtresi. NULL ile maskelenen kolonların tip farkı yok sayılır.',
+  left_then_inner_join:
+    'Her FROM bloğunda join sırasını okur; bir LEFT JOIN’den sonra gelen INNER JOIN’leri raporlar. Alt sorgu ve CTE’ler ayrı blok sayılır.',
+  select_list_subquery:
+    'SELECT ile FROM arasındaki kolon listesinde (SELECT …) veya EXISTS (SELECT …) alt sorgularını bulur.',
+  tablock_physical_insert:
+    'Katalogda kullanıcı tablosu (U) olan INSERT hedeflerinde WITH (TABLOCK) arar. #temp ve @tablo değişkenleri hariçtir.',
+  join_column_type_mismatch:
+    'ON koşulundaki eşitliklerde iki tarafın kolon tipini katalogdan çözer; tip aileleri (int, varchar, nvarchar, date, datetime…) farklıysa raporlar.',
+  non_sargable_predicates:
+    'ON ve WHERE koşullarında kolonun CAST/CONVERT veya fonksiyon (YEAR, ISNULL, LTRIM…) içine alındığı karşılaştırmaları raporlar.',
+  or_in_predicates:
+    'JOIN koşullarındaki her OR’u ve WHERE’de farklı kolonları bağlayan OR’ları (@p IS NULL OR … dahil) raporlar.',
+  scalar_udf_in_query:
+    'Katalogda scalar fonksiyon (FN) olan nesnelerin SELECT/WHERE/JOIN içindeki çağrılarını raporlar; değişkene atamalar hariçtir.',
+  window_order_by_type:
+    'ROW_NUMBER/RANK/DENSE_RANK/NTILE ORDER BY ifadelerinde sabit veya metin tipli (katalogdan çözülen) alanları raporlar.',
+  date_variable_type_mismatch:
+    'Tarih parametre/değişkenlerinin tipini (DECLARE ve parametreler) karşılaştırıldığı kolonun katalog tipiyle kıyaslar (date ↔ datetime, date ↔ int …).',
+  personnel_flag_view_source:
+    'Personnel* türevi olan EDWDM asıl view’larında PersonnelFlag’in varlığını ve kaynağını (EDWDM tablosu ↔ EDWUTIL.DTG LKP tabloları) denetler.',
+  id_literal_filter:
+    'ON/WHERE içinde …Id kolonlarının sabit değerle karşılaştırılmasını arar. Yalnız katalogda kullanıcı tablosundan gelen ve aynı tabloda <Ad>Nk karşılığı olan vekil anahtarlar raporlanır; view kaynakları ve -98/-99/-1 gibi standart değerler hariçtir.',
+  calendar_date_predicate:
+    'WHERE/ON içinde CONVERT/CAST/FORMAT/YEAR/MONTH gibi dönüşümlerle sarılmış tarih kolonlarını bulur ve EDW.COR.Calendar ile aralık join’i önerir. DECLARE/SET ve SELECT listesi kapsam dışıdır.',
+};
+
+export const METADATA_PRECONDITION_LABEL: Record<MetadataPrecondition, string> = {
+  references_scd_table: 'SCD tablo okuyan nesneler',
+  references_partitioned_table: 'Partition’lı tablo kullanan nesneler',
+};
+
+/** Average wall time of one LLM check (object × rule) used for estimates. */
+export const LLM_SECONDS_PER_CHECK = 45;
+
+export function builtinLabel(check: string | null | undefined): string {
+  if (!check) return 'Tanımsız kontrol';
+  return BUILTIN_CHECK_LABEL[check as BuiltinCheck] ?? check;
 }
 
-export function ruleNumber(id: string): number | null {
-  const match = /^Kural(\d+)$/.exec(id.trim());
-  return match ? Number(match[1]) : null;
+/** Scope fields with safe defaults: an older backend may not send the v1.1 fields yet. */
+export interface RuleScope {
+  object_types?: ObjectType[] | null;
+  databases?: string[] | null;
+  name_pattern?: string | null;
 }
 
-/** `Kural01` … `Kural99`, then `Kural100` …, as the backend formats identifiers. */
-export function formatRuleId(value: number): string {
-  return value < 100 ? `Kural${String(value).padStart(2, '0')}` : `Kural${value}`;
+const scopeOf = (r: RuleScope) => ({
+  types: r.object_types ?? [],
+  dbs: (r.databases ?? []).map((d) => d.trim()).filter(Boolean),
+  pattern: (r.name_pattern ?? '').trim(),
+});
+
+function joinTr(items: string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} ve ${items[items.length - 1]}`;
 }
 
-export function previewText(text: string): string {
-  const trimmed = text.trim();
-  if (!trimmed) return '—';
-  return trimmed.length <= PREVIEW_CHARS ? trimmed : `${trimmed.slice(0, PREVIEW_CHARS).trim()}…`;
+/** One-line Turkish sentence, e.g. "EDWDM veritabanındaki, adı “^[^.]+\.v” desenine uyan VIEW nesnelerine uygulanır." */
+export function scopeSummary(rule: RuleScope): string {
+  const {types, dbs, pattern} = scopeOf(rule);
+  const dbPart = dbs.length === 0 ? 'Tüm veritabanlarındaki' : dbs.length === 1 ? `${dbs[0]} veritabanındaki` : `${joinTr(dbs)} veritabanlarındaki`;
+  const typePart = types.length === 0 ? 'tüm nesnelere' : `${joinTr(types)} nesnelerine`;
+  const namePart = pattern ? `, adı “${pattern}” desenine uyan` : '';
+  return `${dbPart}${namePart} ${typePart} uygulanır.`;
 }
 
-export function ruleMatchesSearch(rule: Pick<RuleItem, 'id' | 'text' | 'summary'>, query: string): boolean {
-  const needle = query.trim().toLocaleLowerCase('tr-TR');
-  if (!needle) return true;
-  return [rule.id, rule.text, rule.summary ?? ''].some((value) => value.toLocaleLowerCase('tr-TR').includes(needle));
+/** Compact scope label for tables, e.g. "VIEW · EDWDM · ad deseni"; "Tümü" when unrestricted. */
+export function scopeShort(rule: RuleScope): string {
+  const {types, dbs, pattern} = scopeOf(rule);
+  const parts: string[] = [];
+  if (types.length) parts.push(types.length > 2 ? `${types.length} tip` : types.join(', '));
+  if (dbs.length) parts.push(dbs.length > 2 ? `${dbs.length} DB` : dbs.join(', '));
+  if (pattern) parts.push('ad deseni');
+  return parts.length ? parts.join(' · ') : 'Tümü';
+}
+
+function compileNamePattern(pattern: string): RegExp | null {
+  try {
+    return new RegExp(toJsRegexSource(pattern), 'i');
+  } catch {
+    return null;
+  }
+}
+
+/** Mirrors the backend applicability test: object_types AND databases AND name_pattern ("schema.name"). */
+export function ruleApplies(rule: RuleScope, obj: Pick<DbObject, 'type'> & Partial<Pick<DbObject, 'database' | 'schema' | 'name'>>, compiled?: RegExp | null): boolean {
+  const {types, dbs, pattern} = scopeOf(rule);
+  if (types.length && !types.includes(obj.type)) return false;
+  if (dbs.length && obj.database !== undefined && !dbs.some((d) => d.toLowerCase() === obj.database!.toLowerCase())) return false;
+  if (pattern && obj.name !== undefined) {
+    // An unparseable pattern (JS vs .NET/Python differences) counts as "applies" — the estimate stays an upper bound.
+    const re = compiled === undefined ? compileNamePattern(pattern) : compiled;
+    if (re && !re.test(`${obj.schema ?? ''}.${obj.name}`)) return false;
+  }
+  return true;
+}
+
+export interface CheckEstimate {
+  /** Regex + built-in checks: deterministic, practically instant. */
+  instant: number;
+  /** LLM checks (upper bound — precondition / metadata precondition may skip many). */
+  llm: number;
+  total: number;
+  /** Upper bound for LLM wall time in milliseconds. */
+  llmMaxMs: number;
+}
+
+type ObjLike = Pick<DbObject, 'type'> & Partial<Pick<DbObject, 'database' | 'schema' | 'name'>>;
+
+export function estimateCheckSplit(objects: ObjLike[], rules: (RuleScope & {kind: RuleKind})[]): CheckEstimate {
+  let instant = 0;
+  let llm = 0;
+  for (const r of rules) {
+    const pattern = (r.name_pattern ?? '').trim();
+    const compiled = pattern ? compileNamePattern(pattern) : null;
+    let n = 0;
+    for (const o of objects) if (ruleApplies(r, o, compiled)) n++;
+    if (r.kind === 'llm') llm += n;
+    else instant += n;
+  }
+  return {instant, llm, total: instant + llm, llmMaxMs: llm * LLM_SECONDS_PER_CHECK * 1000};
+}
+
+export function formatLlmEstimate(ms: number): string {
+  if (ms <= 0) return '—';
+  return `en fazla ~${formatDuration(ms)}`;
 }
 
 /**
- * The one sentence everyone but the super admin sees (rule-management Requirement 12, Decision 5):
- * the given summary, otherwise the first sentence of the text — of its "AÇIKLAMA:" section when it
- * has one — up to the first `.`, `!` or `?` followed by a space or the end, or else its first line,
- * at most 200 characters.
+ * Best-effort conversion of Python/.NET regex syntax to JS so the client-side check gives fewer false warnings.
+ * The backend stays authoritative.
  */
-export function displaySummary(rule: Pick<RuleItem, 'text' | 'summary'>): string {
-  const summary = (rule.summary ?? '').trim();
-  if (summary) return summary;
-  // The imported rules read "KURAL ADI: … AÇIKLAMA: …"; the explanation is the meaningful part.
-  const full = rule.text.trim();
-  const explanation = /(?:^|\n)\s*(?:AÇIKLAMA|Açıklama)\s*:\s*/.exec(full);
-  const text = explanation ? full.slice(explanation.index + explanation[0].length).trim() : full;
-  const sentence = /^[\s\S]*?[.!?](?=\s|$)/.exec(text)?.[0] ?? text;
-  const line = sentence.split(/\r?\n/)[0].trim();
-  return line.length <= RULE_SUMMARY_LIMIT ? line : `${line.slice(0, RULE_SUMMARY_LIMIT - 1).trimEnd()}…`;
+export function toJsRegexSource(pattern: string): string {
+  return pattern
+    .replace(/^\(\?[aiLmsux]+\)/, '') // leading inline flags (?i) (?s) …
+    .replace(/\(\?P<(\w+)>/g, '(?<$1>')
+    .replace(/\(\?P=(\w+)\)/g, '\\k<$1>')
+    .replace(/\\A/g, '^')
+    .replace(/\\Z/g, '$');
 }
 
-/** The problem of a summary the server would reject, or null; an empty one is "not given". */
-export function summaryProblem(summary: string): string | null {
-  const trimmed = summary.trim();
-  if (/[\r\n]/.test(trimmed)) return 'Kural özeti tek satır olmalıdır.';
-  if (trimmed.length > RULE_SUMMARY_LIMIT) return `Kural özeti en çok ${RULE_SUMMARY_LIMIT} karakter olabilir.`;
-  return null;
-}
-
-export function moveRule(list: RuleItem[], index: number, delta: -1 | 1): RuleItem[] {
-  const target = index + delta;
-  if (target < 0 || target >= list.length) return list;
-  const next = [...list];
-  [next[index], next[target]] = [next[target], next[index]];
-  return next;
-}
-
-/** The rule's group identifiers in the order of ``groups``, as the server stores them. */
-export function orderedGroupIds(ids: readonly string[] | undefined, groups: RuleGroupItem[]): string[] {
-  const wanted = new Set(ids ?? []);
-  return groups.filter((group) => wanted.has(group.id)).map((group) => group.id);
-}
-
-export function normalizedDraft(draft: RuleDraft): RuleDraft {
-  const clean = (rule: RuleItem): RuleItem => ({
-    id: rule.id,
-    text: rule.text,
-    summary: rule.summary ?? '',
-    requires_metadata: Boolean(rule.requires_metadata),
-    rule_group_ids: orderedGroupIds(rule.rule_group_ids, draft.groups),
-  });
-  return {
-    critical: draft.critical.map(clean),
-    normal: draft.normal.map(clean),
-    groups: draft.groups.map((group) => ({id: group.id, name: group.name, description: group.description ?? ''})),
-  };
-}
-
-export function draftsEqual(left: RuleDraft, right: RuleDraft): boolean {
-  return JSON.stringify(normalizedDraft(left)) === JSON.stringify(normalizedDraft(right));
-}
-
-export function publisherName(version: Pick<RuleSetVersionSummary, 'published_by_name' | 'source'>): string {
-  if (version.source === 'ice-aktarim') return 'içe aktarım';
-  return version.published_by_name ?? 'bilinmiyor';
-}
-
-/** "Son yayın: sürüm N · tarih · yayımlayan" (rule-management Requirement 10). */
-export function latestVersionLine(version: RuleSetVersionSummary | null): string {
-  if (version === null) return 'Henüz yayımlanmış sürüm yok';
-  return `Son yayın: sürüm ${version.number} · ${formatDateTime(version.published_at)} · ${publisherName(version)}`;
-}
-
-/** A client-generated identifier lets one save create a group and assign rules to it. */
-export function newGroupId(): string {
-  return crypto.randomUUID();
-}
-
-/** Turkish-aware folding for group name uniqueness, as the server checks it (I/ı, İ/i). */
-export function foldGroupName(name: string): string {
-  return name.trim().toLocaleLowerCase('tr-TR');
-}
-
-/** The first problem of the group definitions that the server would reject, or null. */
-export function groupProblem(groups: RuleGroupItem[]): string | null {
-  if (groups.length > RULE_GROUPS_LIMIT) return `En çok ${RULE_GROUPS_LIMIT} kural grubu tanımlanabilir.`;
-  const seen = new Set<string>();
-  for (const group of groups) {
-    const name = group.name.trim();
-    if (!name) return 'Kural grubu adı boş olamaz.';
-    if (name.length > RULE_GROUP_NAME_LIMIT) return `Kural grubu adı en çok ${RULE_GROUP_NAME_LIMIT} karakter olabilir.`;
-    const folded = foldGroupName(name);
-    if (seen.has(folded)) return 'Aynı adla iki kural grubu tanımlanamaz.';
-    seen.add(folded);
+/** Returns a warning when the pattern does not compile as a JS regex (never blocks saving). */
+export function regexWarning(pattern: string | null | undefined): string | null {
+  const p = (pattern ?? '').trim();
+  if (!p) return null;
+  try {
+    new RegExp(toJsRegexSource(p), 'u');
+    return null;
+  } catch {
+    try {
+      new RegExp(toJsRegexSource(p));
+      return null;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message.replace(/^Invalid regular expression:\s*/, '') : String(e);
+      return `Tarayıcı bu deseni derleyemedi (${msg}). .NET/Python sözdizimi farklı olabilir; kaydederken sunucu doğrular.`;
+    }
   }
-  return null;
 }
 
-/** How many rules of the given lists belong to each group; a rule counts in each of its groups. */
-export function groupRuleCounts(...lists: RuleItem[][]): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const rule of lists.flat()) {
-    for (const id of rule.rule_group_ids ?? []) counts.set(id, (counts.get(id) ?? 0) + 1);
-  }
-  return counts;
-}
-
-/** The rules with any assignment to ``groupId`` removed; used when a group is deleted. */
-export function withoutGroup(rules: RuleItem[], groupId: string): RuleItem[] {
-  return rules.map((rule) =>
-    rule.rule_group_ids?.includes(groupId)
-      ? {...rule, rule_group_ids: rule.rule_group_ids.filter((id) => id !== groupId)}
-      : rule,
-  );
-}
-
-/** The rule with ``groupId`` added or removed; other memberships stay (Decision 1). */
-export function withGroupMembership(rule: RuleItem, groupId: string, member: boolean): RuleItem {
-  const others = (rule.rule_group_ids ?? []).filter((id) => id !== groupId);
-  return {...rule, rule_group_ids: member ? [...others, groupId] : others};
-}
-
-/** Names of the rule's groups in group order; unknown identifiers are skipped. */
-export function groupNamesOf(rule: RuleItem, groups: RuleGroupItem[]): string[] {
-  const wanted = new Set(rule.rule_group_ids ?? []);
-  return groups.filter((group) => wanted.has(group.id)).map((group) => group.name.trim() || 'Adsız grup');
+/** Notes the test endpoint returns for catalog-dependent rules are informational, not failures. */
+export function isInfoNote(error: string | null | undefined): boolean {
+  return !!error && /metadata|katalog|analiz çalıştır/i.test(error);
 }

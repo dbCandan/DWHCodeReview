@@ -1,1 +1,0 @@
-"""Operational command entry points."""

@@ -1,133 +1,142 @@
-"""FastAPI application factory for the neutral platform baseline."""
+"""FastAPI application factory."""
 
-import asyncio
-import contextlib
 import logging
-from collections.abc import AsyncIterator, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api.integrations import close_integrations, get_review_registry
-from app.api.router import (
-    local_environment_router,
-    router,
-    stored_sql_connection_router,
+from app import crypto
+from app.config import ANALYSIS_WORKERS, APP_VERSION, CORS_ORIGINS, default_data_dir
+from app.db import init_database
+from app.routers import (
+    analyses,
+    assistant,
+    connections,
+    dashboard,
+    exceptions,
+    groups,
+    rules,
+    schedules,
+    settings,
 )
-from app.api.scheduled_reviews.runner import build_scheduler
-from app.core.config import Settings, get_settings
-from app.core.errors import ApplicationError, application_error_handler
-from app.core.logging import configure_logging, log_event
-from app.core.telemetry import configure_telemetry, instrument_engine
-from app.db.readiness import packaged_schema
-from app.db.session import async_session_factory, engine
-from app.middleware.request_logging import RequestLoggingMiddleware
-from app.middleware.tenant_context import TenantContextMiddleware
-from app.services.llm_call_summary_service import run_llm_call_retention
-from app.services.review_history_service import run_review_history_retention
-from app.services.review_run_service import interrupt_stale_runs
-from app.services.sql_connection_service import SqlConnectionMode, sql_connection_mode
-from app.services.startup_checks import integration_setting_errors
-from app.services.super_admin_service import run_super_admin_bootstrap
+from app.migrations import upgrade_ruleset
+from app.seed import seed
+from app.services.analysis_runner import AnalysisRunner, recover_interrupted
+from app.services.assistant import AssistantRunner
+from app.services.catalog import get_catalog
+from app.services.scheduler import Scheduler, recover_runs
+from app.services.assistant import recover_interrupted as recover_assistant
 
-logger = logging.getLogger("app.startup")
+logger = logging.getLogger("dwhcr")
+
+_DEFAULT_DETAILS = {
+    404: "Kaynak bulunamadı.",
+    405: "Bu yöntem desteklenmiyor.",
+}
+
+_VALIDATION_MESSAGES = {
+    "missing": "Zorunlu alan eksik",
+    "literal_error": "Geçersiz değer",
+    "enum": "Geçersiz değer",
+    "json_invalid": "Geçersiz JSON",
+    "string_type": "Metin bekleniyor",
+    "int_parsing": "Tam sayı bekleniyor",
+    "int_type": "Tam sayı bekleniyor",
+    "float_parsing": "Sayı bekleniyor",
+    "float_type": "Sayı bekleniyor",
+    "bool_parsing": "true/false bekleniyor",
+    "bool_type": "true/false bekleniyor",
+    "list_type": "Liste bekleniyor",
+    "dict_type": "Nesne bekleniyor",
+    "model_attributes_type": "Nesne bekleniyor",
+    "date_from_datetime_parsing": "Tarih YYYY-MM-DD biçiminde olmalı",
+    "date_parsing": "Tarih YYYY-MM-DD biçiminde olmalı",
+    "datetime_parsing": "Geçersiz tarih/saat",
+    "datetime_from_date_parsing": "Geçersiz tarih/saat",
+}
 
 
-class UnsafeIntegrationSettings(RuntimeError):
-    """The process refuses to start; the message names settings, never their values."""
+def _validation_detail(error: RequestValidationError) -> str:
+    errors = error.errors()
+    if not errors:
+        return "Geçersiz istek."
+    first = errors[0]
+    location = ".".join(
+        str(part) for part in first.get("loc", ()) if part not in ("body", "query", "path")
+    )
+    message = _VALIDATION_MESSAGES.get(str(first.get("type")), "Geçersiz değer")
+    return f"{message}: {location}" if location else f"{message}."
 
 
-def _lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
+def create_app(data_dir: Path | None = None) -> FastAPI:
+    directory = data_dir or default_data_dir()
+
     @asynccontextmanager
-    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        # application-foundation 002 Requirement 4: readiness compares the database with the
-        # migration head shipped in this image; reading it here stops an image without its
-        # migrations before it serves.
-        packaged_schema()
-        invalid = integration_setting_errors(settings)
-        if invalid:
-            log_event(logger, "startup.integration_settings_invalid", settings=",".join(invalid))
-            raise UnsafeIntegrationSettings("unsafe integration settings: " + ", ".join(invalid))
-        mode = sql_connection_mode(settings)
-        log_event(
-            logger,
-            "startup.sql_connection_mode",
-            mode=mode.value,
-            # In the stored mode the saved connection decides; sql_connection.updated reports it.
-            trust_server_certificate=(
-                None
-                if mode is SqlConnectionMode.STORED
-                else settings.mssql_trust_server_certificate
-            ),
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        crypto.init_cipher(directory)
+        database = init_database(directory)
+        with database.session_factory() as session:
+            seed(session)
+            upgrade_ruleset(session)
+            recovered = recover_interrupted(session)
+            if recovered:
+                logger.info("%s yarım kalan analiz başarısız olarak işaretlendi", recovered)
+            recover_assistant(session)
+        app.state.runner = AnalysisRunner(database.session_factory, ANALYSIS_WORKERS)
+        app.state.assistant = AssistantRunner(database.session_factory)
+        app.state.scheduler = Scheduler(
+            database.session_factory,
+            app.state.runner.submit,
+            lambda: app.dependency_overrides.get(get_catalog, get_catalog)(),
         )
-        telemetry_export = configure_telemetry(settings)
-        instrument_engine(engine.sync_engine)
-        # sql-review 003 Requirement 16: runs this process never finished were cut off.
-        await interrupt_stale_runs(async_session_factory)
-        background = [
-            asyncio.create_task(run_llm_call_retention(async_session_factory)),
-            asyncio.create_task(
-                run_review_history_retention(
-                    async_session_factory,
-                    retention_days=settings.review_history_retention_days,
-                )
-            ),
-            # application-foundation 001 Requirement 14: creates the configured super admin once;
-            # it retries in the background while a first installation is still migrating.
-            asyncio.create_task(run_super_admin_bootstrap(async_session_factory, settings)),
-        ]
-        # sql-review 008 Decision 2: the scheduler is a module of this process, off by default.
-        if settings.scheduler_enabled:
-            background.append(asyncio.create_task(build_scheduler(settings).run_forever()))
-        log_event(logger, "startup.scheduler", enabled=settings.scheduler_enabled)
+        app.state.runner.on_finished = app.state.scheduler.finalize_analysis
+        with database.session_factory() as session:
+            recover_runs(session)
+        app.state.scheduler.start()
         try:
             yield
         finally:
-            await get_review_registry().shutdown()
-            for task in background:
-                task.cancel()
-            for task in background:
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
-            close_integrations()
-            await engine.dispose()
-            if telemetry_export is not None:
-                telemetry_export.shutdown()
+            app.state.scheduler.shutdown()
+            app.state.runner.shutdown()
+            app.state.assistant.shutdown()
+            database.dispose()
 
-    return lifespan
-
-
-def create_application(settings: Settings | None = None) -> FastAPI:
-    settings = settings or get_settings()
-    configure_logging(settings.log_level)
-    application = FastAPI(
-        title=settings.project_name,
-        version="0.1.0",
-        description="Platform API for dwhcodereview",
-        docs_url="/docs",
-        openapi_url="/openapi.json",
-        lifespan=_lifespan(settings),
-    )
-    # Register tenant context first; Starlette makes the later CORS middleware outermost,
-    # so even authorization failures receive the browser-facing CORS headers.
-    application.add_middleware(TenantContextMiddleware)
-    application.add_middleware(
+    app = FastAPI(title="DWH Code Review", version=APP_VERSION, lifespan=lifespan)
+    app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_allow_origins_list,
-        allow_credentials=True,
+        allow_origins=CORS_ORIGINS,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["WWW-Authenticate", "X-Request-ID"],
+        expose_headers=["Content-Disposition"],
     )
-    application.add_middleware(RequestLoggingMiddleware)
-    application.add_exception_handler(ApplicationError, application_error_handler)
-    application.include_router(router)
-    if settings.runtime_environment == "local":
-        application.include_router(local_environment_router(settings.api_prefix))
-    elif sql_connection_mode(settings) is SqlConnectionMode.STORED:
-        application.include_router(stored_sql_connection_router(settings.api_prefix))
-    return application
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+        detail = exc.detail
+        if not isinstance(detail, str) or detail in ("Not Found", "Method Not Allowed"):
+            detail = _DEFAULT_DETAILS.get(exc.status_code, "İstek işlenemedi.")
+        return JSONResponse({"detail": detail}, status_code=exc.status_code, headers=exc.headers)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+        return JSONResponse({"detail": _validation_detail(exc)}, status_code=422)
+
+    @app.exception_handler(Exception)
+    async def unexpected_error(_: Request, exc: Exception) -> JSONResponse:
+        logger.exception("beklenmeyen hata", exc_info=exc)
+        return JSONResponse({"detail": "Beklenmeyen bir sunucu hatası oluştu."}, status_code=500)
+
+    for module in (dashboard, assistant, rules, exceptions, groups, connections, settings,
+                   analyses, schedules):
+        app.include_router(module.router)
+    return app
 
 
-app = create_application()
+app = create_app()

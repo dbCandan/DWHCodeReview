@@ -11,6 +11,18 @@ chart name. Kubernetes names are at most 63 characters.
 {{- end }}
 
 {{/*
+Ingress name. It keeps the name the earlier two-image chart gave its ingress
+("<release>-<chart>-entry-<hash>") so an upgrade from that chart patches the existing ingress in place:
+a second ingress for the same host and path is refused by the nginx admission webhook.
+*/}}
+{{- define "app.ingressName" -}}
+{{- $release := .Release.Name | trunc 18 | trimSuffix "-" -}}
+{{- $slug := .Chart.Name | trunc 18 | trimSuffix "-" -}}
+{{- $identity := printf "%s/%s/%s/entry" .Release.Namespace .Release.Name .Chart.Name -}}
+{{- printf "%s-%s-entry-%s" $release $slug (sha256sum $identity | trunc 12) | trunc 63 | trimSuffix "-" -}}
+{{- end }}
+
+{{/*
 Labels shared by every resource. They are also the Deployment and Service selector, so they hold only
 values that never change between releases (no chart or app version).
 */}}

@@ -13,6 +13,7 @@ de-duplicated. Transient transport errors are retried per call (`RETRY_DELAYS`).
 
 import json
 import re
+import ssl
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -137,7 +138,9 @@ def chat(config: LlmConfig, messages: list[dict[str, str]], max_tokens: int | No
             response = client.post(_endpoint(config.base_url), json=body, headers=headers)
     except httpx.TimeoutException:
         raise LlmError("LLM zamanında yanıt vermedi (zaman aşımı).", transient=True) from None
-    except httpx.ConnectError:
+    except httpx.ConnectError as error:
+        if _certificate_failure(error):
+            raise LlmError(CERTIFICATE_MESSAGE) from None
         raise LlmError(_unreachable_message(config.base_url), transient=True) from None
     except httpx.TransportError as error:  # ReadError, RemoteProtocolError, WriteError...
         raise LlmError(
@@ -469,6 +472,25 @@ def review(
     return findings
 
 
+CERTIFICATE_MESSAGE = (
+    "LLM sunucusunun TLS sertifikası doğrulanamadı. Sunucu kurum içi bir sertifika kullanıyorsa"
+    " kök sertifikası güvenilenlere eklenmelidir (container imajı kurumsal kök sertifikayı içerir;"
+    " uygulamayı imaj dışında çalıştırıyorsanız SSL_CERT_FILE ile sertifika dosyasını gösterin)."
+)
+
+
+def _certificate_failure(error: BaseException) -> bool:
+    """True when a connection failed because the server certificate could not be verified."""
+    seen: BaseException | None = error
+    for _ in range(8):
+        if seen is None:
+            break
+        if isinstance(seen, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in str(seen):
+            return True
+        seen = seen.__cause__ or seen.__context__
+    return False
+
+
 def _unreachable_message(base_url: str) -> str:
     host = (httpx.URL(base_url).host or "").lower()
     message = "LLM sunucusuna ulaşılamadı. Sunucunun çalıştığını ve Base URL'i kontrol edin."
@@ -496,7 +518,9 @@ def list_models(config: LlmConfig) -> list[str]:
             response = client.get(f"{base}/models", headers=headers)
     except httpx.TimeoutException:
         raise LlmError("LLM sunucusu zamanında yanıt vermedi (zaman aşımı).") from None
-    except httpx.HTTPError:
+    except httpx.HTTPError as error:
+        if _certificate_failure(error):
+            raise LlmError(CERTIFICATE_MESSAGE) from None
         raise LlmError(_unreachable_message(config.base_url)) from None
     if response.status_code in (401, 403):
         raise LlmError(f"LLM API anahtarı reddedildi (HTTP {response.status_code}).")

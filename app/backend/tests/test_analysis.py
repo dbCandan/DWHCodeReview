@@ -1,4 +1,5 @@
 import json
+import ssl
 
 import httpx
 import pytest
@@ -266,6 +267,20 @@ def test_llm_unreachable_docker_host_hint(client: TestClient) -> None:
               "api_key": "", "temperature": 0, "timeout_seconds": 30},
     ).json()
     assert result["ok"] is False and "127.0.0.1" in result["message"]
+
+
+def test_llm_untrusted_certificate_is_named(client: TestClient) -> None:
+    def untrusted(request: httpx.Request) -> httpx.Response:
+        cause = ssl.SSLCertVerificationError(1, "[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer")
+        raise httpx.ConnectError(str(cause), request=request) from cause
+
+    llm.http_transport = httpx.MockTransport(untrusted)
+    body = {"enabled": True, "base_url": "https://runai.example.internal/v1", "model": "m1",
+            "api_key": "", "temperature": 0, "timeout_seconds": 30}
+    result = client.post("/api/settings/llm/test", json=body).json()
+    assert result["ok"] is False and "sertifika" in result["message"]
+    models = client.post("/api/settings/llm/models", json=body).json()
+    assert "sertifika" in models["error"]
 
 
 def test_llm_failure_marks_object_error_but_completes(client: TestClient) -> None:

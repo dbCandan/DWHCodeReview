@@ -33,7 +33,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN set -eux; \
     apk upgrade --no-cache; \
-    apk add --no-cache unixodbc libstdc++; \
+    apk add --no-cache unixodbc libstdc++ ca-certificates; \
     apk add --no-cache --virtual .fetch curl gnupg; \
     case "$(apk --print-arch)" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; *) echo "unsupported arch" >&2; exit 1 ;; esac; \
     cd /tmp; \
@@ -44,6 +44,13 @@ RUN set -eux; \
     echo y | apk add --no-cache --allow-untrusted "msodbcsql18_${MSODBC_VERSION}_${arch}.apk"; \
     rm -rf /tmp/msodbcsql18_* /root/.gnupg; \
     apk del .fetch
+
+# Corporate root CA ("Kuveyt Turk Trust Network"): internal endpoints such as the RunAI LLM serve
+# certificates it issued. It joins the system bundle, and SSL_CERT_FILE points httpx at that bundle.
+COPY app/backend/certs/corporate-inference-root.crt /usr/local/share/ca-certificates/corporate-inference-root.crt
+RUN chmod 0644 /usr/local/share/ca-certificates/corporate-inference-root.crt \
+    && update-ca-certificates
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
 COPY app/backend/requirements.txt /tmp/requirements.txt

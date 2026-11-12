@@ -5,9 +5,10 @@ app:
   # One pod only: SQLite lives on a ReadWriteOnce volume and the scheduler runs in-process.
   replicaCount: 1
   image:
-    # Built by .github/workflows/image-build.yml (ghcr.io/<owner>/dwhcodereview), pulled through
-    # the internal registry mirror.
-    repository: cr-test.kuveytturk.com.tr/ghcr.io.vc/kt-vibecoding/dwhcodereview
+    # Built by .github/workflows/image-build.yml (ghcr.io/<owner>/dwhcodereview-backend; the same image
+    # is also published as -frontend for the deployment pipeline's wait step), pulled through the
+    # internal registry mirror.
+    repository: cr-test.kuveytturk.com.tr/ghcr.io.vc/kt-vibecoding/dwhcodereview-backend
     # deploy.sh sets the tag (IMAGE_TAG, default latest); a digest, when given, wins over the tag.
     tag: latest
     digest: ""

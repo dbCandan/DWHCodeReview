@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.config import APP_VERSION
+from app.config import APP_COMMIT, APP_VERSION
 from app.db import get_session
 from app.services import presenters
 from app.routers.schedules import upcoming
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api", tags=["dashboard"])
 
 @router.get("/health", response_model=schemas.Health)
 def health() -> schemas.Health:
-    return schemas.Health(status="ok", version=APP_VERSION)
+    return schemas.Health(status="ok", version=APP_VERSION, commit=APP_COMMIT)
 
 
 def _count(session: Session, stmt) -> int:  # type: ignore[no-untyped-def]

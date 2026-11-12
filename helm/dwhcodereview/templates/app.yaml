@@ -31,6 +31,11 @@ spec:
     metadata:
       labels:
         {{- include "app.labels" . | nindent 8 }}
+      {{- if eq (toString .Values.app.image.tag) "latest" }}
+      # A moving tag does not change the pod spec; this stamp makes every deploy roll the pod.
+      annotations:
+        dwhcodereview/deployed-at: {{ now | date "20060102T150405Z" | quote }}
+      {{- end }}
     spec:
       automountServiceAccountToken: false
       securityContext:

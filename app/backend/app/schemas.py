@@ -428,6 +428,8 @@ class Dashboard(BaseModel):
 class Health(BaseModel):
     status: str
     version: str
+    #: Commit the container image was built from (empty outside the image).
+    commit: str = ""
 
 
 # ---------------------------------------------------------------- rule assistant (v1.6)

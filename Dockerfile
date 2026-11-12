@@ -23,13 +23,16 @@ FROM ${PYTHON_IMAGE}
 ARG MSODBC_VERSION=18.5.1.1-1
 ARG MSODBC_URL=https://download.microsoft.com/download/fae28b9a-d880-42fd-9b98-d779f0fdd77f
 ARG APP_UID=10001
+# Commit of this build (the workflow passes github.sha); shown by /api/health.
+ARG GIT_SHA=""
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONUTF8=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     DWHCR_DATA_DIR=/data \
-    DWHCR_STATIC_DIR=/app/ui
+    DWHCR_STATIC_DIR=/app/ui \
+    DWHCR_COMMIT=${GIT_SHA}
 
 RUN set -eux; \
     apk upgrade --no-cache; \

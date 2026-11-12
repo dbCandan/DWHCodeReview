@@ -6,7 +6,11 @@ set -euo pipefail
 chart="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 release="${RELEASE:-dwhcodereview}"
 namespace="${NAMESPACE:-dwhcodereview}"
-image_tag="${IMAGE_TAG:-latest}"
+# Deploy the image of the checked-out commit: the build workflow tags each image with the full commit
+# SHA and the pipeline waits for that tag. A fixed tag such as "latest" leaves the Deployment
+# unchanged, so Kubernetes would keep running the old pod. IMAGE_TAG still overrides it.
+image_tag="${IMAGE_TAG:-$(git -C "$chart" rev-parse HEAD 2>/dev/null || echo latest)}"
+echo "image tag: $image_tag" >&2
 mode=apply
 
 while [[ $# -gt 0 ]]; do

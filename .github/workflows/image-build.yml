@@ -39,6 +39,7 @@ jobs:
           file: Dockerfile
           push: true
           platforms: linux/amd64
+          build-args: GIT_SHA=${{ github.sha }}
           tags: |
             ${{ env.BACKEND }}:latest
             ${{ env.BACKEND }}:${{ env.DATE_TAG }}

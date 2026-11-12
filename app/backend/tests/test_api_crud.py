@@ -32,7 +32,7 @@ CONN = {
 
 
 def test_health_and_seed(client: TestClient) -> None:
-    assert client.get("/api/health").json() == {"status": "ok", "version": "1.0.0"}
+    assert client.get("/api/health").json() == {"status": "ok", "version": "1.0.0", "commit": ""}
     rules = client.get("/api/rules").json()
     codes = [r["code"] for r in rules]
     assert codes == sorted(codes)

@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 
 APP_VERSION = "1.0.0"
+# Set by the image build (Dockerfile ARG GIT_SHA); tells which commit a deployed pod runs.
+APP_COMMIT = os.environ.get("DWHCR_COMMIT", "").strip()
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR_ENV = "DWHCR_DATA_DIR"
 # Production UI build served by the backend (container); unset in development (Vite serves it).

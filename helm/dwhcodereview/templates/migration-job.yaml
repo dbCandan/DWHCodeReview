@@ -1,0 +1,122 @@
+{{- if .Values.migration.enabled -}}
+{{- include "generated.validateMigration" . -}}
+{{- $migration := .Values.migration -}}
+{{- $secret := include "generated.migrationSecret" . -}}
+{{- $mode := include "generated.migrationMode" . -}}
+{{- $image := include "generated.image" (list "backend" .Values.backend.image) -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  {{- if eq $mode "upgrade" }}
+  name: {{ include "generated.resourceName" (list . "migration") }}
+  {{- else }}
+  name: {{ include "generated.resourceName" (list . "migration-init") }}
+  {{- end }}
+  labels:
+    {{- include "generated.workloadLabels" (dict "root" . "component" "migration") | nindent 4 }}
+  annotations:
+    {{- include "generated.annotations" . | nindent 4 }}
+    {{- if eq $mode "upgrade" }}
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "0"
+    # The last run stays for inspection until the next deployment replaces it.
+    helm.sh/hook-delete-policy: before-hook-creation
+    {{- end }}
+spec:
+  # A failed migration is inspected, never retried.
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ $migration.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "generated.workloadLabels" (dict "root" . "component" "migration") | nindent 8 }}
+      annotations:
+        {{- include "generated.annotations" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        # The database Service accepts a connection only after its SELECT 1 readiness probe passes.
+        - name: wait-for-database
+          image: {{ $image | quote }}
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-c"]
+          args:
+            - |
+              import socket
+              import time
+
+              while True:
+                  try:
+                      socket.create_connection(({{ include "generated.resourceName" (list . "database") | quote }}, {{ int .Values.postgres.port }}), timeout=3).close()
+                      break
+                  except OSError:
+                      print("waiting for the database", flush=True)
+                      time.sleep(3)
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          resources:
+            {{- toYaml $migration.resources | nindent 12 }}
+        # As the schema owner, keep the runtime role DML-only and set its password from the Secret
+        # before Alembic runs; default privileges extend the grants to the tables Alembic creates.
+        # psql reads the connection from the PG* keys and the role from the environment, and the
+        # session keeps its statements out of the server log, so no credential reaches the command,
+        # the manifest or a log.
+        - name: runtime-role
+          image: {{ include "generated.postgresImage" . | quote }}
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              exec psql --no-psqlrc --quiet --set=ON_ERROR_STOP=1 --set=VERBOSITY=terse <<'SQL'
+              SET log_statement = 'none';
+              SET log_min_error_statement = 'panic';
+              \getenv runtime_user RUNTIME_DATABASE_USER
+              \getenv runtime_password RUNTIME_DATABASE_PASSWORD
+              SELECT format('CREATE ROLE %I', :'runtime_user') WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'runtime_user') \gexec
+              SELECT format('ALTER ROLE %I WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD %L', :'runtime_user', :'runtime_password') \gexec
+              SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), :'runtime_user') \gexec
+              SELECT format('GRANT USAGE ON SCHEMA public TO %I', :'runtime_user') \gexec
+              SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I', :'runtime_user') \gexec
+              SELECT format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %I', :'runtime_user') \gexec
+              SELECT format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', :'runtime_user') \gexec
+              SELECT format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO %I', :'runtime_user') \gexec
+              SQL
+          envFrom:
+            - secretRef: {name: {{ $secret | quote }}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+          resources:
+            {{- toYaml $migration.resources | nindent 12 }}
+      containers:
+        - name: migration
+          image: {{ $image | quote }}
+          imagePullPolicy: IfNotPresent
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - secretRef: {name: {{ $secret | quote }}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+          resources:
+            {{- toYaml $migration.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+{{- end }}

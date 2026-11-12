@@ -1,0 +1,29 @@
+{{- if .Values.postgres.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "generated.resourceName" (list . "database") }}
+  labels:
+    {{- include "generated.workloadLabels" (dict "root" . "component" "database") | nindent 4 }}
+  annotations:
+    {{- include "generated.annotations" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      scaffold.kt.internal/workload: {{ include "generated.resourceName" (list . "database") | quote }}
+  policyTypes: [Ingress, Egress]
+  # Only the backend and the migration Job reach the database; the database opens no connection.
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: backend
+              scaffold.kt.internal/workload: {{ include "generated.resourceName" (list . "backend") | quote }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: migration
+              scaffold.kt.internal/workload: {{ include "generated.resourceName" (list . "migration") | quote }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.postgres.port }}}
+  egress: []
+{{- end }}

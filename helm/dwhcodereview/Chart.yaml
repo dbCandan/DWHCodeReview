@@ -1,0 +1,9 @@
+apiVersion: v2
+name: dwhcodereview
+description: "DWH Code Review"
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+annotations:
+  scaffold.kt.internal/product-slug: "dwhcodereview"
+  scaffold.kt.internal/product-name: "DWH Code Review"

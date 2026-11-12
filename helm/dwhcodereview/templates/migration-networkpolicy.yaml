@@ -1,0 +1,33 @@
+{{- if .Values.migration.enabled -}}
+{{- include "generated.validateMigration" . -}}
+{{- if not .Values.migration.networkPolicy.dns -}}
+{{- fail "migration.networkPolicy.dns must name the cluster DNS peers" -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "generated.resourceName" (list . "migration") }}
+  labels:
+    {{- include "generated.workloadLabels" (dict "root" . "component" "migration") | nindent 4 }}
+  annotations:
+    {{- include "generated.annotations" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      scaffold.kt.internal/workload: {{ include "generated.resourceName" (list . "migration") | quote }}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        {{- toYaml .Values.migration.networkPolicy.dns | nindent 8 }}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: database
+              scaffold.kt.internal/workload: {{ include "generated.resourceName" (list . "database") | quote }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.postgres.port }}}
+{{- end }}

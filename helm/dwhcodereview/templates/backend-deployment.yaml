@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "generated.resourceName" (list . "backend") }}
+  labels:
+    {{- include "generated.workloadLabels" (dict "root" . "component" "backend") | nindent 4 }}
+  annotations:
+    {{- include "generated.annotations" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      scaffold.kt.internal/workload: {{ include "generated.resourceName" (list . "backend") | quote }}
+  template:
+    metadata:
+      labels:
+        {{- include "generated.workloadLabels" (dict "root" . "component" "backend") | nindent 8 }}
+      annotations:
+        {{- include "generated.annotations" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: backend
+          image: {{ include "generated.image" (list "backend" .Values.backend.image) | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: 8000}
+          {{- include "generated.validateBackendConfig" . }}
+          {{- with .Values.backend.config }}
+          # Non-secret project settings from values-project.yaml; secrets arrive only through envFrom.
+          env:
+            {{- range $key, $value := . }}
+            - {name: {{ $key | quote }}, value: {{ $value | toString | quote }}}
+            {{- end }}
+          {{- end }}
+          envFrom:
+            - secretRef: {name: "{{ required "backend.existingSecret must name the Secret the project deploy hook prepares" .Values.backend.existingSecret }}"}
+            {{- if .Values.postgres.enabled }}
+            # Listed last so the DML-only runtime connection deploy.sh generates wins.
+            - secretRef: {name: {{ include "generated.databaseSecret" . | quote }}}
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+          startupProbe:
+            httpGet: {path: "/api/dwhcodereview/v1/liveness", port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: "/api/dwhcodereview/v1/readiness", port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: "/api/dwhcodereview/v1/liveness", port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}

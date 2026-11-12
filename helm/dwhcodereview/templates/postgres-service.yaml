@@ -1,0 +1,16 @@
+{{- if .Values.postgres.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "generated.resourceName" (list . "database") }}
+  labels:
+    {{- include "generated.workloadLabels" (dict "root" . "component" "database") | nindent 4 }}
+  annotations:
+    {{- include "generated.annotations" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    scaffold.kt.internal/workload: {{ include "generated.resourceName" (list . "database") | quote }}
+  ports:
+    - {name: postgres, port: {{ .Values.postgres.port }}, targetPort: postgres}
+{{- end }}

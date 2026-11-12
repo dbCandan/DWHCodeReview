@@ -1,0 +1,21 @@
+{{- if not .Values.frontend.networkPolicy.ingress -}}
+{{- fail "frontend.networkPolicy.ingress must be supplied by the deployment environment" -}}
+{{- end -}}
+{{- $ingress := .Values.frontend.networkPolicy.ingress -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "generated.resourceName" (list . "frontend") }}
+  labels:
+    {{- include "generated.workloadLabels" (dict "root" . "component" "frontend") | nindent 4 }}
+  annotations:
+    {{- include "generated.annotations" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      scaffold.kt.internal/workload: {{ include "generated.resourceName" (list . "frontend") | quote }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    {{- toYaml $ingress | nindent 4 }}
+  egress:
+    {{- toYaml .Values.frontend.networkPolicy.egress | nindent 4 }}

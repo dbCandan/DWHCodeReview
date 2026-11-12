@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "generated.resourceName" (list . "frontend") }}
+  labels:
+    {{- include "generated.workloadLabels" (dict "root" . "component" "frontend") | nindent 4 }}
+  annotations:
+    {{- include "generated.annotations" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      scaffold.kt.internal/workload: {{ include "generated.resourceName" (list . "frontend") | quote }}
+  template:
+    metadata:
+      labels:
+        {{- include "generated.workloadLabels" (dict "root" . "component" "frontend") | nindent 8 }}
+      annotations:
+        {{- include "generated.annotations" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: frontend
+          image: {{ include "generated.image" (list "frontend" .Values.frontend.image) | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: 8080}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: cache, mountPath: /var/cache/nginx}
+            - {name: run, mountPath: /var/run}
+          startupProbe:
+            httpGet: {path: /, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+      volumes:
+        - name: cache
+          emptyDir: {sizeLimit: 64Mi}
+        - name: run
+          emptyDir: {sizeLimit: 8Mi}

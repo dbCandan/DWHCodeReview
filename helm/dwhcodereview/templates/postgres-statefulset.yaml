@@ -1,0 +1,96 @@
+{{- if .Values.postgres.enabled -}}
+{{- $postgres := .Values.postgres -}}
+{{- $name := include "generated.resourceName" (list . "database") -}}
+{{- include "generated.validateDatabase" . -}}
+{{- $secret := include "generated.postgresSecret" . -}}
+{{- $size := required "postgres.persistence.size must be declared" $postgres.persistence.size -}}
+{{- $storageClass := required "postgres.persistence.storageClassName must name the storage class explicitly" $postgres.persistence.storageClassName -}}
+{{- $probe := `exec psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -w -tAc "SELECT 1"` -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "generated.workloadLabels" (dict "root" . "component" "database") | nindent 4 }}
+  annotations:
+    {{- include "generated.annotations" . | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      scaffold.kt.internal/workload: {{ $name | quote }}
+  template:
+    metadata:
+      labels:
+        {{- include "generated.workloadLabels" (dict "root" . "component" "database") | nindent 8 }}
+      annotations:
+        {{- include "generated.annotations" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: postgres
+          image: {{ include "generated.postgresImage" . | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: postgres, containerPort: {{ $postgres.port }}}
+          env:
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+            - {name: POSTGRES_DB, value: {{ $postgres.database | quote }}}
+            - {name: POSTGRES_INITDB_ARGS, value: "--data-checksums"}
+          envFrom:
+            - secretRef: {name: {{ $secret | quote }}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+            - {name: run, mountPath: /var/run/postgresql}
+            - {name: tmp, mountPath: /tmp}
+          # A real query as the configured user; pg_isready would accept a missing role or database.
+          startupProbe:
+            exec:
+              command: ["/bin/sh", "-c", {{ $probe | quote }}]
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", {{ $probe | quote }}]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", {{ $probe | quote }}]
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml $postgres.resources | nindent 12 }}
+      volumes:
+        - name: run
+          emptyDir: {sizeLimit: 8Mi}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "generated.workloadLabels" (dict "root" . "component" "database") | nindent 10 }}
+      spec:
+        accessModes: [{{ $postgres.persistence.accessMode | quote }}]
+        storageClassName: {{ $storageClass | quote }}
+        resources:
+          requests:
+            storage: {{ $size | quote }}
+{{- end }}

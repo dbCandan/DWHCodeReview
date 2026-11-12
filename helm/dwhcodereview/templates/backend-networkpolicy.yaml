@@ -1,0 +1,25 @@
+{{- if not .Values.backend.networkPolicy.ingress -}}
+{{- fail "backend.networkPolicy.ingress must be supplied by the deployment environment" -}}
+{{- end -}}
+{{- if not .Values.backend.networkPolicy.egress -}}
+{{- fail "backend.networkPolicy.egress must include admitted DNS and database peers" -}}
+{{- end -}}
+{{- $ingress := .Values.backend.networkPolicy.ingress -}}
+{{- $egress := .Values.backend.networkPolicy.egress -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "generated.resourceName" (list . "backend") }}
+  labels:
+    {{- include "generated.workloadLabels" (dict "root" . "component" "backend") | nindent 4 }}
+  annotations:
+    {{- include "generated.annotations" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      scaffold.kt.internal/workload: {{ include "generated.resourceName" (list . "backend") | quote }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    {{- toYaml $ingress | nindent 4 }}
+  egress:
+    {{- toYaml $egress | nindent 4 }}

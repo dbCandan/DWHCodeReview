@@ -1,0 +1,85 @@
+# Factory-managed defaults. Project environment addressing (ingress host and TLS Secret name,
+# backend Secret name and egress peers, storage class, database toggles) belongs in the
+# project-owned values-project.yaml beside this file, which deploy.sh layers on top.
+backend:
+  replicaCount: 1
+  image:
+    repository: cr-test.kuveytturk.com.tr/ghcr.io.vc/kt-vibecoding/dwhcodereview-backend
+    tag: latest
+    digest: ""
+  existingSecret: ""
+  # Non-secret settings as prefixed environment variables, for example DWHCODEREVIEW_LOG_LEVEL.
+  config: {}
+  networkPolicy:
+    ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kube-system
+        ports:
+          - {protocol: TCP, port: 8000}
+    egress: []
+  service:
+    port: 8000
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 1000m, memory: 512Mi}
+
+frontend:
+  replicaCount: 1
+  image:
+    repository: cr-test.kuveytturk.com.tr/ghcr.io.vc/kt-vibecoding/dwhcodereview-frontend
+    tag: latest
+    digest: ""
+  ingress:
+    className: ""
+    host: ""
+    tlsSecretName: ""
+  networkPolicy:
+    ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kube-system
+        ports:
+          - {protocol: TCP, port: 8080}
+    egress: []
+  service:
+    port: 8080
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+
+# Optional in-chart PostgreSQL 17. It stays off until the project's accepted PRD declares it and is
+# enabled together with the migration. deploy.sh generates its Secrets once and reuses them.
+postgres:
+  enabled: false
+  image:
+    repository: postgres
+    tag: "17.10"
+    digest: "sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317"
+  port: 5432
+  database: "dwhcodereview_db"
+  persistence:
+    size: 10Gi
+    storageClassName: ""
+    accessMode: ReadWriteOnce
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 1000m, memory: 1Gi}
+
+# Optional Alembic schema migration Job; it runs the backend image and needs postgres.enabled.
+migration:
+  enabled: false
+  activeDeadlineSeconds: 600
+  networkPolicy:
+    dns:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchLabels:
+            k8s-app: kube-dns
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}

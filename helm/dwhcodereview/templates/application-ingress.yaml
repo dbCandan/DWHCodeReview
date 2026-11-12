@@ -1,0 +1,32 @@
+{{- $className := required "frontend.ingress.className must be supplied by the deployment environment" .Values.frontend.ingress.className -}}
+{{- $host := required "frontend.ingress.host must be supplied by the deployment environment" .Values.frontend.ingress.host -}}
+{{- $tlsSecret := required "frontend.ingress.tlsSecretName must be supplied by the deployment environment" .Values.frontend.ingress.tlsSecretName -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "generated.resourceName" (list . "entry") }}
+  labels:
+    {{- include "generated.workloadLabels" (dict "root" . "component" "frontend") | nindent 4 }}
+  annotations:
+    {{- include "generated.annotations" . | nindent 4 }}
+spec:
+  ingressClassName: {{ $className | quote }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ $tlsSecret | quote }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: "/api/dwhcodereview/v1"
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "generated.resourceName" (list . "backend") }}
+                port: {name: http}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "generated.resourceName" (list . "frontend") }}
+                port: {name: http}

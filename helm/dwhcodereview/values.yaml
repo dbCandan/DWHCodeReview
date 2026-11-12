@@ -1,0 +1,30 @@
+# Chart defaults for the single-image deployment (API + UI in one container, SQLite on a volume).
+# Project environment addressing (ingress host, TLS Secret name, storage class and size) belongs in
+# the project-owned values-project.yaml beside this file, which deploy.sh layers on top.
+app:
+  # One pod only: SQLite lives on a ReadWriteOnce volume and the scheduler runs in-process.
+  replicaCount: 1
+  image:
+    # Built by .github/workflows/image-build.yml (ghcr.io/<owner>/dwhcodereview), pulled through
+    # the internal registry mirror.
+    repository: cr-test.kuveytturk.com.tr/ghcr.io.vc/kt-vibecoding/dwhcodereview
+    # deploy.sh sets the tag (IMAGE_TAG, default latest); a digest, when given, wins over the tag.
+    tag: latest
+    digest: ""
+  # Matches the Dockerfile: uvicorn listens on 8080 and answers /api/health.
+  port: 8080
+  healthPath: /api/health
+  # Extra non-secret environment variables for the container, e.g. {LOG_LEVEL: info}.
+  env: {}
+  persistence:
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClassName: ""
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 1000m, memory: 1Gi}
+
+ingress:
+  className: ""
+  host: ""
+  tlsSecretName: ""
